@@ -1,0 +1,23 @@
+<package>
+  <description brief="receding_planar_sys">
+
+    receding_planar_sys
+
+  </description>
+  <author>Jarvis Schultz</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/receding_planar_sys</url>
+  <!-- my packages -->
+  <depend package="puppeteer_msgs"/>
+  <depend package="robot_simulator" />
+  <!-- standard ROS packages -->
+  <depend package="std_msgs"/>
+  <depend package="rospy"/>
+  <depend package="roscpp"/>
+  <depend package="nav_msgs"/>
+  <depend package="tf"/>
+  <depend package="tf_conversions"/>
+  <depend package="angles" />
+  <depend package="visualization_msgs"/>
+</package>

@@ -1,0 +1,19 @@
+<launch>
+  <!-- arg for the robot name -->  
+  <arg name="rn"/>
+  <!-- arg for the frame that we want the urdf to attach to -->
+  <arg name="frame" default="base_footprint_kinect" />
+  <!-- set all parameters for this namespace -->
+  <param name="tf_prefix" value="$(arg rn)" />
+  <param name="robot_description" textfile="$(find robot_simulator)/urdf/robot_base.urdf" />
+
+  <!-- launch all required nodes -->
+  <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+  <node name="robot_state_publisher" pkg="robot_state_publisher" type="state_publisher"/>
+  <node pkg="tf" type="static_transform_publisher" name="model_connector"
+	args="0 0 0 0 0 0 1 $(arg frame) base_link 100" />
+  <node pkg="robot_simulator" type="robot_simulator" name="simulator"
+	output="screen" respawn="true" />
+  <node pkg="topic_tools" type="relay" name="$(arg rn)_relay" 
+	output="screen" required="true" args="/serial_commands serial_commands" />
+</launch>
