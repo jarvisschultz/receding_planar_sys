@@ -121,7 +121,10 @@ class VI_EKF( EKF ):
         self.dsys = discopt.DSystem(self.mvi, array([0, self.Dt]))
 
     def state_trans(self, Winc, *args, **kwargs):
-        self.dsys.set(self.xkk, uk=array([]), k=0)
+        u = kwargs.pop('u', None)
+        if u == None:
+            u = array([])
+        self.dsys.set(self.xkk, uk=u, k=0)
         xkkm1 = self.dsys.f()
         self.Flin = self.dsys.fdx()
         return xkkm1

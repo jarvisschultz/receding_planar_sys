@@ -5,11 +5,9 @@ from trep import tx, ty, tz, rx, ry, rz
 BALL_MASS = 0.1244 ## kg
 g = 9.81 ## m/s^2
 h0 = 1 ## default height of robot in m
-DT = 1/30.0 ## nominal dt for the system
-CALLBACK_DIVISOR = 30
 
 
-def MassSystem2D(self):
+def MassSystem2D():
     # define system:
     system = trep.System()
 

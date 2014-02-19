@@ -7,7 +7,8 @@ time, etc.
 """
 Tper = 8.0 # total time
 import numpy as np
-
+from math import pi
+import system_definition as sd
 
 def calc_reference_traj(dsys, tvec):
     # build empty array for the dynamic configurations as a function of time
@@ -34,7 +35,7 @@ def calc_reference_traj(dsys, tvec):
     ri = dsys.system.get_config('r').index - dsys.system.nQd
     for i,t in enumerate(tvec):
         qk[i, xri] = qd[i, xmi]
-        qk[i, ri] = ot.h0 - qd[i, ymi]
+        qk[i, ri] = sd.h0 - qd[i, ymi]
     Q = np.hstack((qd,qk))
     # fill out Uref to be offset from kinematic inputs:
     Uref = qk[1:]
