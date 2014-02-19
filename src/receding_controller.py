@@ -51,6 +51,7 @@ import optimizer as op
 import reference_manager as rm
 import system_definition as sd
 import ekf
+import tools
 
 
 # global constants:
@@ -67,12 +68,18 @@ class RecedingController:
         # first let's get all necessary parameters:
         self.get_and_set_params()
 
-        # create time vectors, optimizer, dsys
+        # create time vectors, system, vi, and dsys
         self.system = sd.MassSystem2D()
         self.mvi = sd.trep.MidpointVI(self.system)
         self.tvec = np.arange(0, self.dt*(int(self.tf/self.dt)+1), self.dt)
         self.twin = np.arange(0, self.dt*self.n_win, self.dt)
         self.dsys = op.discopt.DSystem(self.mvi, self.twin)
+        
+        # create optimizer and cost matrices
+        self.optimizer = op.RecedingOptimizer(self.system, self.twin, DT=self.dt)
+        self.Qcost = np.diag([20, 20, 0.1, 0.1, 0.1, 0.1, 1, 1])
+        self.Rcost = np.diag([0.1, 0.1])
+
 
         # get the initial config of the system:
         X,U = rm.calc_reference_traj(self.dsys, [0])
@@ -155,8 +162,6 @@ class RecedingController:
         rospy.logdebug("measurement callback triggered")
 
         op = rospy.get_param("/operating_condition")
-        # increment callback count
-        self.callback_count += 1;
 
         if op != 2:
             # we are not running, keep setting initializations
@@ -170,19 +175,34 @@ class RecedingController:
             self.send_initial_config()
             self.tbase = data.header.stamp
             self.first_flag = False
+            self.callback_count = 0
             # get reference traj after initial dt:
             Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, dt])
             # send reference traj U and store:
             self.Uprev = Utmp[0]
             self.convert_and_send_input(self.Uprev)
         else:
+            self.callback_count += 1
             # first, let's update the EKF
+            zk = tools.config_to_array(self.system, data)
+            self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # now get the reference trajectory
+            ttmp = self.twin + self.callback_count*self.dt
+            Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
+            # build initial guess:
+            X0, U0 = op.calc_initial_guess(self.dsys, self.ekf.xkk, Xref, Uref)
+            # optimize:
+            err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
+                                                        Xref, Uref, X0, U0)
+            if err:
+                rospy.logwarn("Received an error from optimizer!")
+            # now set and send U:
+            self.Uprev = U[0]
+            self.convert_and_send_input(self.Uprev)
+            # is the trajectory finished?
+            if self.callback_count >= len(self.tvec):
+                
             
-            self.ekf.step_filter
-
-        
-        
-
         
         return
 

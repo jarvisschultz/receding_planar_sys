@@ -65,7 +65,7 @@ class EKF( object ):
         self.index += 1
         self.t += self.Dt
         # prediction
-        xkkm1 = self.state_trans(Winc, args, kwargs)
+        xkkm1 = self.state_trans(Winc, *args, **kwargs)
         Fkm1 = self.proc_linearize(xkkm1)
         Pkkm1 = tools.matmult(Fkm1,self.Pkk,Fkm1.T) + self.Qk
         # update

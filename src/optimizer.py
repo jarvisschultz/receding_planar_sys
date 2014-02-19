@@ -3,7 +3,7 @@ import trep
 import trep.discopt as discopt
 import numpy as np
 from collections import deque
-
+import rospy
 
 def calc_initial_guess(dsys, X0, Xref, Uref):
     """
@@ -64,8 +64,8 @@ class RecedingOptimizer( object ):
                 # do we have time to take step?
                 if (time.time()-tstart) + \
                     np.average(self.tsamps, weights=self.coeffs) > self.DT:
-                    print "[WARN] Step number {1:d} exited early after  "\
-                      "{0:d} steps".format(step_count, i)
+                    rospy.logwarn("Step number {1:d} exited early after  "\
+                      "{0:d} steps".format(step_count, i))
                     break
                 if first: method='steepest'
                 else: method='newton'
@@ -75,15 +75,15 @@ class RecedingOptimizer( object ):
                 self.tsamps.append(time.time()-tstep)
                 step_count += 1
                 if time.time() - tstart > self.DT:
-                    print "[WARN] Step number {2:d} time elapsed = "\
+                    rospy.logwarn("Step number {2:d} time elapsed = "\
                       "{0:4.4f} s for {1:d} steps".format(time.time()-tstart,
-                                                          step_count, i)
+                                                          step_count, i))
                     break
         except trep.ConvergenceError as e:
-            print("Detected optimization problem: %s"%e.message)
+            rospy.loginfo("Detected optimization problem: %s"%e.message)
             error = True
         except:
-            print "[ERROR] Unknown error!"
+            rospy.logerr("Unknown error!")
             error = True
         return error, X0, U0
 
