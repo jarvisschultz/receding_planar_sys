@@ -4,6 +4,25 @@ import trep.discopt as discopt
 import numpy as np
 from collections import deque
 
+
+def calc_initial_guess(dsys, X0, Xref, Uref):
+    """
+    Builds an initial trajectory guess using an initial condition, and a
+    feedforward U
+    """
+    X,U = dsys.build_trajectory()
+    X[0] = X0
+    U = Uref
+    for k in range(system.dsys.kf()):
+        if k == 0:
+            system.dsys.set(X[k], U[k], 0)
+        else:
+            system.dsys.step(U[k])
+        X[k+1] = system.dsys.f()
+    return X,U
+
+
+
 class RecedingOptimizer( object ):
 
     def __init__(self, system, t, beta=0.7, tolerance=1e-1, DT=None):
@@ -21,7 +40,7 @@ class RecedingOptimizer( object ):
         # setup parameters for estimating whether we have time to take a step:
         N = 3
         self.tsamps = deque([self.DT/3.0]*N, maxlen=N)
-        self.coeffs = [10, 4, 2]
+        self.coeffs = [2, 4, 10]
 
 
     def optimize_window(self, Qcost, Rcost, Xref, Uref, X0, U0):
