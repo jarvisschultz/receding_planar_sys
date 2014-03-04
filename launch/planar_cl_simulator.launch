@@ -4,9 +4,9 @@
   <arg name="dir" default="$(find robot_simulator)/data/" />
   <arg name="vis" default="true" />
   <arg name="index" value="1" />
-  <arg name="receding" default="false" />
-  <arg name="freq" default="30.0" />
-  <arg name="window" default="3.0" />
+  <arg name="freq" default="10.0" />
+  <arg name="window" default="20" />
+  <arg name="tf" default="10.0" /> 
 
   <!-- first let's add the static frame broadcaster that broadcasts frames in a default config -->
   <include file="$(find robot_simulator)/launch/default_calibration_frames.launch" />
@@ -28,26 +28,18 @@
     <node pkg="robot_simulator" name="marker" type="mass_marker" 
           output="screen" respawn="true" />
 
-    <!-- now I want to start up the controller/ filter, and the
-	 coordinator simulator -->
-    <node pkg="robot_simulator" name="controller"
-	  type="planar_cl_controller.py" output="screen" respawn="true"
-	  args="-f $(arg dir)$(arg file)" unless="$(arg receding)"/>
-    <node pkg="robot_simulator" name="receding_controller"
-	  type="receding_planar_controller.py" output="screen" respawn="true"
-	  if="$(arg receding)"/>
-    <param name="window_length" value="$(arg window)" type="double" 
-	   if="$(arg receding)"/>
+    <!-- now I want to set appropriate parameters and start up the controller -->
+    <param name="window_length" value="$(arg window)" type="int" />
+    <param name="controller_freq" value="$(arg freq)" type="double" />
+    <param name="time_final" value="$(arg tf)" type="double" />
+    <node pkg="receding_planar_sys" name="receding_controller"
+	  type="receding_controller.py" output="screen" respawn="true" />
+
 
     <!-- start path generator if receding true -->
-    <node pkg="robot_simulator" name="path_generator" 
-	  type="receding_path_generator.py" output="screen" respawn="true"
-	  args="-f $(arg dir)$(arg file)" if="$(arg receding)"/>
-    <!-- start up receding optimizer if receding is true -->
-    <!-- <node pkg="robot_simulator" name="receding_optimizer" -->
-    <!-- 	  type="receding_planar_optimizer.py" output="screen" respawn="true" -->
-    <!-- 	  if="$(arg receding)"/> -->
-
+    <!-- <node pkg="robot_simulator" name="path_generator"  -->
+    <!-- 	  type="receding_path_generator.py" output="screen" respawn="true" -->
+    <!-- 	  args="-f $(arg dir)$(arg file)" if="$(arg receding)"/> -->
   </group>
 
   <!-- start up the keyboard node -->
@@ -59,7 +51,7 @@
   <!-- start up rviz unless visualization is set to false -->
   <group if="$(arg vis)">
     <node pkg="rviz" type="rviz" respawn="false" name="rviz"
-	  args="-d $(find robot_simulator)/launch/one_robot.vcg" />
+	  args="-d $(find receding_planar_sys)/launch/one_robot.vcg" />
   </group>
   
 

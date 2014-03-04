@@ -201,9 +201,7 @@ class RecedingController:
             self.convert_and_send_input(self.Uprev)
             # is the trajectory finished?
             if self.callback_count >= len(self.tvec):
-                
-            
-        
+                rospy.set_param("/operating_condition", 3) # 3 = Stop
         return
 
     
