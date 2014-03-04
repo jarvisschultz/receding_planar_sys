@@ -13,14 +13,13 @@ def calc_initial_guess(dsys, X0, Xref, Uref):
     X,U = dsys.build_trajectory()
     X[0] = X0
     U = Uref
-    for k in range(system.dsys.kf()):
+    for k in range(dsys.kf()):
         if k == 0:
-            system.dsys.set(X[k], U[k], 0)
+            dsys.set(X[k], U[k], 0)
         else:
-            system.dsys.step(U[k])
-        X[k+1] = system.dsys.f()
+            dsys.step(U[k])
+        X[k+1] = dsys.f()
     return X,U
-
 
 
 class RecedingOptimizer( object ):

@@ -57,7 +57,7 @@ import tools
 # global constants:
 DT = 1/10. # timestep
 LEN =  20 # number of time steps to optimize over
-Tper = rm.Tper
+TPER = rm.TPER
 
 
 class RecedingController:
@@ -118,7 +118,7 @@ class RecedingController:
 
         # send the robot it's starting pose in the /optimization_frame
         rospy.logwarn("Waiting for three seconds!!!")
-        time.sleep(3)
+        rospy.sleep(3)
         rospy.loginfo("Ready to go!!!")
         self.send_initial_config()
         # send robot a start command:
@@ -161,9 +161,9 @@ class RecedingController:
     def meascb(self, data):
         rospy.logdebug("measurement callback triggered")
 
-        op = rospy.get_param("/operating_condition")
+        op_cond = rospy.get_param("/operating_condition")
 
-        if op != 2:
+        if op_cond != 2:
             # we are not running, keep setting initializations
             self.first_flag = True
             self.callback_count = 0
@@ -177,7 +177,7 @@ class RecedingController:
             self.first_flag = False
             self.callback_count = 0
             # get reference traj after initial dt:
-            Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, dt])
+            Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt])
             # send reference traj U and store:
             self.Uprev = Utmp[0]
             self.convert_and_send_input(self.Uprev)
@@ -185,7 +185,11 @@ class RecedingController:
             self.callback_count += 1
             # first, let's update the EKF
             zk = tools.config_to_array(self.system, data)
+            # print "zk = ",zk
+            # print "xkk = ", self.ekf.xkk
+            # print "uk = ", self.Uprev
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # rospy.signal_shutdown("test")
             # now get the reference trajectory
             ttmp = self.twin + self.callback_count*self.dt
             Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
@@ -202,10 +206,21 @@ class RecedingController:
             # is the trajectory finished?
             if self.callback_count >= len(self.tvec):
                 rospy.set_param("/operating_condition", 3) # 3 = Stop
+                # now we can stop the robots
+                self.stop_robots()
+
         return
 
     
     def get_and_set_params(self):
+        # robot index:
+        if rospy.has_param("robot_index"):
+            tmp = rospy.get_param("robot_index")
+            self.robot_index = tmp
+        else:
+            rospy.logwarn("Choosing default index for robot!")
+            self.robot_index = 1
+            rospy.set_param("robot_index", self.robot_index)
         # controller frequency
         if rospy.has_param("controller_freq"):
             tmp = rospy.get_param("controller_freq")
@@ -228,9 +243,9 @@ class RecedingController:
             tmp = rospy.get_param("time_final")
             self.tf = float(tmp)
         else:
-            self.n_win = Tper
-            rospy.set_param("time_final", self.n_win)
-        rospy.loginfo("Final Time: %d",self.)
+            self.tf = TPER
+            rospy.set_param("time_final", self.tf)
+        rospy.loginfo("Final Time: %d",self.tf)
         # idle on startup
         rospy.set_param("/operating_condition", 0)
         return
@@ -244,10 +259,10 @@ class RecedingController:
         com.header.stamp = rospy.get_rostime()
         com.header.frame_id = "/optimization_frame"
         com.div = 4
-        com.x = self.Q0[self.system.get_config['xr'].index]
+        com.x = self.Q0[self.system.get_config('xr').index]
         com.y = 0
         com.th = 0
-        com.height_left = self.Q0[self.system.get_config['r'].index]
+        com.height_left = self.Q0[self.system.get_config('r').index]
         com.height_right = 1
         self.comm_pub.publish(com)
         return
@@ -282,6 +297,14 @@ class RecedingController:
         self.comm_pub.publish(com)
         return
 
+    
+    def stop_robots(self):
+        com = RobotCommands()
+        com.robot_index = self.robot_index
+        com.type = ord('q')
+        com.header.stamp = rospy.get_rostime()
+        self.comm_pub.publish(com)
+        return
 
 
 

@@ -5,7 +5,7 @@ Later on I can update this file to do things like subscribe to some topic, store
 trajectory data, interpolate data, offset times from ROS time to optimization
 time, etc.
 """
-Tper = 8.0 # total time
+TPER = 8.0 # total time
 import numpy as np
 from math import pi
 import system_definition as sd
@@ -16,14 +16,14 @@ def calc_reference_traj(dsys, tvec):
     xmi = dsys.system.get_config('xm').index
     ymi = dsys.system.get_config('ym').index
     # shape params:
-    # Tper = 12 # seconds to traverse one period
+    # TPER = 12 # seconds to traverse one period
     rx = 1.5/2 # 1/2 width in meters
     ry = 0.25/2 # 1/2 height in meters
     n = 2.5 # power of the ellipse
     # fill out desired dynamic vars:
     for i,t in enumerate(tvec):
-        if t <= Tper:
-            th = t*2*pi/Tper + pi/2
+        if t <= TPER:
+            th = t*2*pi/TPER + pi/2
         else:
             th = 2*pi + pi/2
         qd[i, xmi] = np.abs(np.cos(th))**(2.0/n)*rx*np.sign(np.cos(th))

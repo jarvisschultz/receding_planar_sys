@@ -23,15 +23,5 @@ add_definitions(${EIGEN_DEFINITIONS})
 
 
 rosbuild_add_executable(receding_coordinator src/receding_coordinator.cpp)
+rosbuild_link_boost(receding_coordinator signals)
 
-
-
-# rosbuild_add_executable(robot_simulator src/robot_simulator.cpp)
-# rosbuild_add_executable(rand_test src/rand_test.cpp)
-# rosbuild_add_executable(mass_marker src/mass_marker.cpp)
-# rosbuild_add_executable(planar_coordinator src/planar_coordinator.cpp)
-# rosbuild_add_boost_directories()
-# rosbuild_link_boost(planar_coordinator signals)
-# # add logging functionality
-# find_library(LOG4CXX_LIBRARY log4cxx)
-# target_link_libraries(planar_coordinator ${LOG4CXX_LIBRARY})

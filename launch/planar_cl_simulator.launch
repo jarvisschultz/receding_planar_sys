@@ -34,6 +34,7 @@
     <param name="time_final" value="$(arg tf)" type="double" />
     <node pkg="receding_planar_sys" name="receding_controller"
 	  type="receding_controller.py" output="screen" respawn="true" />
+	  <!-- launch-prefix="xterm -e" /> -->
 
 
     <!-- start path generator if receding true -->
