@@ -45,6 +45,8 @@ from geometry_msgs.msg import PoseStamped
 
 # misc imports:
 import numpy as np
+from collections import deque
+import copy
 
 # local imports
 import optimizer as op
@@ -58,6 +60,7 @@ import tools
 DT = 1/10. # timestep
 LEN =  20 # number of time steps to optimize over
 TPER = rm.TPER
+PATH_TIME = 6.0 # number of seconds to store paths
 
 
 class RecedingController:
@@ -99,6 +102,8 @@ class RecedingController:
         self.tbase = rospy.Time.now()
         self.callback_count = 0
         self.Uprev = np.zeros(self.dsys.nU)
+        self.mass_ref_vec = deque([], maxlen=self.PATH_LENGTH)
+        self.mass_act_vec = deque([], maxlen=self.PATH_LENGTH)
 
         # create a service provider for the reference configuration
         self.config_serv = rospy.Service("get_ref_config", PlanarSystemService,
@@ -112,9 +117,11 @@ class RecedingController:
         self.filt_state_pub = rospy.Publisher("filt_state", PlanarSystemState)
         self.ref_pub = rospy.Publisher("ref_config", PlanarSystemConfig)
         self.comm_pub = rospy.Publisher("serial_commands", RobotCommands)
-        # self.ref_path_pub = rospy.Publisher("mass_ref_path", Path)
-        # self.filt_path_pub = rospy.Publisher("mass_filt_path", Path)
+        self.ref_path_pub = rospy.Publisher("mass_ref_path", Path)
+        self.filt_path_pub = rospy.Publisher("mass_filt_path", Path)
         self.cov_pub = rospy.Publisher("post_covariance", PlanarCovariance)
+        # define timer callbacks:
+        self.path_timer = rospy.Timer(rospy.Duration(0.1), self.path_timercb)
 
         # send the robot it's starting pose in the /optimization_frame
         rospy.logwarn("Waiting for three seconds!!!")
@@ -193,6 +200,8 @@ class RecedingController:
             # now get the reference trajectory
             ttmp = self.twin + self.callback_count*self.dt
             Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
+            # add to path info:
+            self.add_to_path_vectors(data, Xref[0], self.ekf.xkk)
             # build initial guess:
             X0, U0 = op.calc_initial_guess(self.dsys, self.ekf.xkk, Xref, Uref)
             # optimize:
@@ -208,7 +217,6 @@ class RecedingController:
                 rospy.set_param("/operating_condition", 3) # 3 = Stop
                 # now we can stop the robots
                 self.stop_robots()
-
         return
 
     
@@ -246,11 +254,58 @@ class RecedingController:
             self.tf = TPER
             rospy.set_param("time_final", self.tf)
         rospy.loginfo("Final Time: %d",self.tf)
+        # set number of indices in path variables:
+        self.PATH_LENGTH = int(PATH_TIME*1.0/self.dt)
         # idle on startup
         rospy.set_param("/operating_condition", 0)
         return
-        
 
+
+    def add_to_path_vectors(self, meas_data, ref_state, filt_state):
+        pose = PoseStamped()
+        pose.header.stamp = meas_data.header.stamp
+        pose.header.frame_id = path.header.frame_id
+        # fill out filtered position:
+        pose.pose.position.x = filt_state[self.system.get_config('xm').index]
+        pose.pose.position.y = filt_state[self.system.get_config('ym').index]
+        pose.pose.position.z = 0.0
+        self.mass_act_vec.append(pose)
+        # fill out reference position and publish
+        pose2 = copy.deepcopy(pose)
+        pose2.pose.position.x = ref_state[self.system.get_config('xm').index]
+        pose2.pose.position.y = ref_state[self.system.get_config('ym').index]
+        pose2.pose.position.z = 0.0
+        self.mass_ref_vec.append(pose2)
+        return
+
+
+        
+    def path_timercb(self, time_dat):
+        # create empty Path and PoseStamped
+        path = Path()
+        path.header.stamp = meas_data.header.stamp
+        path.header.frame_id = meas_data.header.frame_id
+        pose.header.frame_id = path.header.frame_id
+
+        # fill out filtered position and publish:
+        pose.pose.position.x = filt_state[self.system.get_config('xm').index]
+        pose.pose.position.y = filt_state[self.system.get_config('ym').index]
+        pose.pose.position.z = 0.0
+        self.mass_act_vec.append(pose)
+        path.poses = list(self.mass_act_vec)
+        self.filt_path_pub.publish(path)
+
+        # fill out reference position and publish
+        pose2 = copy.deepcopy(pose)
+        pose2.pose.position.x = ref_state[self.system.get_config('xm').index]
+        pose2.pose.position.y = ref_state[self.system.get_config('ym').index]
+        pose2.pose.position.z = 0.0
+        self.mass_ref_vec.append(pose2)
+        path.poses = list(self.mass_ref_vec)
+        self.ref_path_pub.publish(path)
+
+        return
+    
 
     def send_initial_config(self):
         com = RobotCommands()
