@@ -82,6 +82,7 @@ class EKF( object ):
         self.tvec[self.index] = self.t
         self.measurements[self.index] = zt
         return
+
     
     def store_data(self, fname):
         out = {}
@@ -105,6 +106,11 @@ class EKF( object ):
                                                sum(self.meas_cov), sum(self.Hk),
                                                self.L, self.index)
         return hashlib.sha1(hashstring).hexdigest()[:num]
+
+
+    # def reset_filter(self):
+    #     print "[WARN] Need to implement this function for each inheriting class"
+    #     return None
 
 
 class VI_EKF( EKF ):
@@ -197,4 +203,3 @@ class Nonlinear_RK2_EKF( EKF ):
         return (eye(self.dim) + tools.matmult(
             self.Dt*self.A(xlin + 0.5*self.Dt*self.f(xlin)),
             eye(self.dim) + 0.5*self.Dt*self.A(xlin)))
-    

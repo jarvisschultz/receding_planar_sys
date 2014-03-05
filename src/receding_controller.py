@@ -8,6 +8,7 @@ This node runs a true receding horizon optimization.
 
 SUBSCRIPTIONS:
     - meas_config (PlanarSystemConfig)
+    - /operating_condition (OperatingCondition)
 
 PUBLISHERS:
     - filt_config (PlanarSystemConfig)
@@ -21,6 +22,7 @@ PUBLISHERS:
 
 SERVICES:
     - get_ref_config (PlanarSystemService) (provider)
+    - operating_condition_change (OperatingConditionChange) (client)
 
 PARAMS:
     - window_length ~ defines number of timesteps in an optimization
@@ -38,8 +40,11 @@ from puppeteer_msgs.msg import PlanarSystemConfig
 from puppeteer_msgs.msg import RobotCommands
 from puppeteer_msgs.msg import PlanarCovariance
 from puppeteer_msgs.msg import PlanarSystemState
+from puppeteer_msgs.msg import OperatingCondition
 from puppeteer_msgs.srv import PlanarSystemService
 from puppeteer_msgs.srv import PlanarSystemServiceRequest
+from puppeteer_msgs.srv import OperatingConditionChange
+from puppeteer_msgs.srv import OperatingConditionChangeRequest
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 
@@ -103,14 +108,28 @@ class RecedingController:
         self.callback_count = 0
         self.Uprev = np.zeros(self.dsys.nU)
         self.mass_ref_vec = deque([], maxlen=self.PATH_LENGTH)
-        self.mass_act_vec = deque([], maxlen=self.PATH_LENGTH)
+        self.mass_filt_vec = deque([], maxlen=self.PATH_LENGTH)
 
         # create a service provider for the reference configuration
         self.config_serv = rospy.Service("get_ref_config", PlanarSystemService,
                                             self.ref_config_service_handler)
+        # wait for service servers:
+        rospy.loginfo("Waiting for operating_condition_change service")
+        rospy.wait_for_service("/operating_condition_change")
+        rospy.loginfo("operating_condition_change service now available")
+        self.op_change_client = rospy.ServiceProxy("/operating_condition_change",
+                                                   OperatingConditionChange)
+        # idle on startup
+        self.operating_condition = OperatingCondition.IDLE
+        try:
+            self.op_change_client(OperatingCondition(self.operating_condition))
+        except rospy.ServiceException, e:
+            rospy.loginfo("Service did not process request: %s"%str(e))
         # define subscribers:
         self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                             self.meascb)
+        self.op_cond_sub = rospy.Subscriber("/operating_condition",
+                                            OperatingCondition, self.opcb)
         # define publishers:
         self.time_pub = rospy.Publisher("start_time", Time)
         self.filt_pub = rospy.Publisher("filt_config", PlanarSystemConfig)
@@ -136,7 +155,7 @@ class RecedingController:
 
 
     def ref_config_service_handler(self, req):
-        if req.index != 0:
+        if req.index is not 0:
             rospy.logerr("Current provider cannot handle index request")
             return None
         elif req.t < 0.0 or req.t > self.tf:
@@ -162,19 +181,26 @@ class RecedingController:
                 'time' : time,
                 }
 
-    
+
+    def opcb(self, data):
+        # rospy.loginfo("Operating condition cb: %d"%data.state)
+        self.operating_condition = data.state
+        return
 
     
     def meascb(self, data):
         rospy.logdebug("measurement callback triggered")
 
-        op_cond = rospy.get_param("/operating_condition")
-
-        if op_cond != 2:
+        # op_cond = rospy.get_param("/operating_condition")
+        op_cond = self.operating_condition
+        if op_cond is not 2:
             # we are not running, keep setting initializations
             self.first_flag = True
             self.callback_count = 0
+            self.ekf.index = 0
             # clear trajectories:
+            self.mass_ref_vec.clear()
+            self.mass_filt_vec.clear()
             return
 
         if self.first_flag:
@@ -183,6 +209,8 @@ class RecedingController:
             self.tbase = data.header.stamp
             self.first_flag = False
             self.callback_count = 0
+            # reset filter:
+            self.ekf.index = 0
             # get reference traj after initial dt:
             Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt])
             # send reference traj U and store:
@@ -205,18 +233,24 @@ class RecedingController:
             # build initial guess:
             X0, U0 = op.calc_initial_guess(self.dsys, self.ekf.xkk, Xref, Uref)
             # optimize:
-            err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
-                                                        Xref, Uref, X0, U0)
-            if err:
-                rospy.logwarn("Received an error from optimizer!")
+            # err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
+            #                                             Xref, Uref, X0, U0)
+            # if err:
+            #     rospy.logwarn("Received an error from optimizer!")
             # now set and send U:
-            self.Uprev = U[0]
+            self.Uprev = U0[0]
             self.convert_and_send_input(self.Uprev)
             # is the trajectory finished?
             if self.callback_count >= len(self.tvec):
-                rospy.set_param("/operating_condition", 3) # 3 = Stop
+                rospy.loginfo("Trajectory complete!")
+                # rospy.set_param("/operating_condition", OperatingCondition.STOP)
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.STOP))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
                 # now we can stop the robots
                 self.stop_robots()
+
         return
 
     
@@ -256,20 +290,18 @@ class RecedingController:
         rospy.loginfo("Final Time: %d",self.tf)
         # set number of indices in path variables:
         self.PATH_LENGTH = int(PATH_TIME*1.0/self.dt)
-        # idle on startup
-        rospy.set_param("/operating_condition", 0)
         return
 
 
     def add_to_path_vectors(self, meas_data, ref_state, filt_state):
         pose = PoseStamped()
         pose.header.stamp = meas_data.header.stamp
-        pose.header.frame_id = path.header.frame_id
+        pose.header.frame_id = meas_data.header.frame_id
         # fill out filtered position:
         pose.pose.position.x = filt_state[self.system.get_config('xm').index]
         pose.pose.position.y = filt_state[self.system.get_config('ym').index]
         pose.pose.position.z = 0.0
-        self.mass_act_vec.append(pose)
+        self.mass_filt_vec.append(pose)
         # fill out reference position and publish
         pose2 = copy.deepcopy(pose)
         pose2.pose.position.x = ref_state[self.system.get_config('xm').index]
@@ -281,29 +313,21 @@ class RecedingController:
 
         
     def path_timercb(self, time_dat):
-        # create empty Path and PoseStamped
-        path = Path()
-        path.header.stamp = meas_data.header.stamp
-        path.header.frame_id = meas_data.header.frame_id
-        pose.header.frame_id = path.header.frame_id
+        if len(self.mass_ref_vec) > 0:
+            # send reference path
+            ref_path = Path()
+            ref_path.header.stamp = time_dat.current_real
+            ref_path.header.frame_id = self.mass_ref_vec[-1].header.frame_id
+            ref_path.poses = list(self.mass_ref_vec)
+            self.ref_path_pub.publish(ref_path)
 
-        # fill out filtered position and publish:
-        pose.pose.position.x = filt_state[self.system.get_config('xm').index]
-        pose.pose.position.y = filt_state[self.system.get_config('ym').index]
-        pose.pose.position.z = 0.0
-        self.mass_act_vec.append(pose)
-        path.poses = list(self.mass_act_vec)
-        self.filt_path_pub.publish(path)
-
-        # fill out reference position and publish
-        pose2 = copy.deepcopy(pose)
-        pose2.pose.position.x = ref_state[self.system.get_config('xm').index]
-        pose2.pose.position.y = ref_state[self.system.get_config('ym').index]
-        pose2.pose.position.z = 0.0
-        self.mass_ref_vec.append(pose2)
-        path.poses = list(self.mass_ref_vec)
-        self.ref_path_pub.publish(path)
-
+        if len(self.mass_filt_vec) > 0:
+            # send filtered path
+            filt_path = Path()
+            filt_path.header.stamp = time_dat.current_real
+            filt_path.header.frame_id = self.mass_filt_vec[-1].header.frame_id
+            filt_path.poses = list(self.mass_filt_vec)
+            self.filt_path_pub.publish(filt_path)
         return
     
 
