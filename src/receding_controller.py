@@ -237,17 +237,16 @@ class RecedingController:
             # build initial guess:
             X0, U0 = op.calc_initial_guess(self.dsys, self.ekf.xkk, Xref, Uref)
             # optimize:
-            # err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
-            #                                             Xref, Uref, X0, U0)
-            # if err:
-            #     rospy.logwarn("Received an error from optimizer!")
+            err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
+                                                        Xref, Uref, X0, U0)
+            if err:
+                rospy.logwarn("Received an error from optimizer!")
             # now set and send U:
             self.Uprev = U0[0]
             self.convert_and_send_input(self.Uprev)
             # is the trajectory finished?
             if self.callback_count >= len(self.tvec):
                 rospy.loginfo("Trajectory complete!")
-                # rospy.set_param("/operating_condition", OperatingCondition.STOP)
                 try:
                     self.op_change_client(OperatingCondition(OperatingCondition.STOP))
                 except rospy.ServiceException, e:
