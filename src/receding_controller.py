@@ -193,7 +193,11 @@ class RecedingController:
 
         # op_cond = rospy.get_param("/operating_condition")
         op_cond = self.operating_condition
-        if op_cond is not 2:
+        if op_cond is OperatingCondition.CALIBRATE:
+            self.send_initial_config()
+            self.first_flag = False
+            return
+        elif op_cond is not OperatingCondition.RUN:
             # we are not running, keep setting initializations
             self.first_flag = True
             self.callback_count = 0
