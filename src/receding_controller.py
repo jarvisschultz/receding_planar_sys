@@ -199,7 +199,7 @@ class RecedingController:
         op_cond = self.operating_condition
         if op_cond is OperatingCondition.CALIBRATE:
             self.send_initial_config()
-            self.first_flag = False
+            # self.first_flag = False
             return
         elif op_cond is not OperatingCondition.RUN:
             # we are not running, keep setting initializations
@@ -224,7 +224,9 @@ class RecedingController:
             # send reference traj U and store:
             self.Uprev = Utmp[0]
             self.Ukey = Utmp[0]
-            self.convert_and_send_input(self.Uprev)
+            # self.Uprev = Xtmp[1][2:4]
+            # self.Ukey = Xtmp[1][2:4]
+            self.convert_and_send_input(Xtmp[0][2:4], Utmp[0])
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)
@@ -240,6 +242,8 @@ class RecedingController:
             Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
             # get initial guess
             X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
+            # add path information:
+            self.add_to_path_vectors(data, Xref[0], Xstart)
             # optimize
             err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
                                                         Xref, Uref, X0, U0)
@@ -368,7 +372,7 @@ class RecedingController:
             ref_path.header.stamp = time_dat.current_real
             ref_path.header.frame_id = self.mass_ref_vec[-1].header.frame_id
             ref_path.poses = list(self.mass_ref_vec)
-            # self.ref_path_pub.publish(ref_path)
+            self.ref_path_pub.publish(ref_path)
 
         if len(self.mass_filt_vec) > 0:
             # send filtered path
@@ -376,7 +380,7 @@ class RecedingController:
             filt_path.header.stamp = time_dat.current_real
             filt_path.header.frame_id = self.mass_filt_vec[-1].header.frame_id
             filt_path.poses = list(self.mass_filt_vec)
-            # self.filt_path_pub.publish(filt_path)
+            self.filt_path_pub.publish(filt_path)
         return
     
 
