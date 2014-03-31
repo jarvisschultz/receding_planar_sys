@@ -82,6 +82,7 @@ class RecedingController:
         self.tvec = np.arange(0, self.dt*(int(self.tf/self.dt)+1), self.dt)
         self.twin = np.arange(0, self.dt*self.n_win, self.dt)
         self.dsys = op.discopt.DSystem(self.mvi, self.twin)
+        self.dsyssim = op.discopt.DSystem(self.mvi, [0, self.dt])
         
         # create optimizer and cost matrices
         self.optimizer = op.RecedingOptimizer(self.system, self.twin, DT=self.dt)
@@ -106,7 +107,10 @@ class RecedingController:
         self.first_flag = True
         self.tbase = rospy.Time.now()
         self.callback_count = 0
-        self.Uprev = np.zeros(self.dsys.nU)
+        # self.Uprev = np.zeros(self.dsys.nU)
+        Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt])
+        self.Ukey = Utmp[0]
+        self.Uprev = Utmp[0]
         self.mass_ref_vec = deque([], maxlen=self.PATH_LENGTH)
         self.mass_filt_vec = deque([], maxlen=self.PATH_LENGTH)
 
@@ -219,32 +223,32 @@ class RecedingController:
             Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt])
             # send reference traj U and store:
             self.Uprev = Utmp[0]
+            self.Ukey = Utmp[0]
             self.convert_and_send_input(self.Uprev)
         else:
             self.callback_count += 1
-            # first, let's update the EKF
             zk = tools.config_to_array(self.system, data)
-            # print "zk = ",zk
-            # print "xkk = ", self.ekf.xkk
-            # print "uk = ", self.Uprev
+            # send old value to robot:
+            self.convert_and_send_input(self.Uprev, self.Ukey) # instead of Uprev, could this come from the estimate from the EKF?
+            # get updated estimate
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
-            # rospy.signal_shutdown("test")
-            # now get the reference trajectory
-            ttmp = self.twin + self.callback_count*self.dt
+            # get prediction of where we will be in +dt seconds
+            self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
+            Xstart = self.dsyssim.f()
+            # get reference traj
+            ttmp = self.twin + (self.callback_count + 1)*self.dt
             Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
-            # add to path info:
-            self.add_to_path_vectors(data, Xref[0], self.ekf.xkk)
-            # build initial guess:
-            X0, U0 = op.calc_initial_guess(self.dsys, self.ekf.xkk, Xref, Uref)
-            # optimize:
+            # get initial guess
+            X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
+            # optimize
             err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
                                                         Xref, Uref, X0, U0)
             if err:
                 rospy.logwarn("Received an error from optimizer!")
-            # now set and send U:
-            self.Uprev = U0[0]
-            self.convert_and_send_input(self.Uprev)
-            # is the trajectory finished?
+            # store data:
+            self.Uprev = self.Ukey
+            self.Ukey = U[0]
+            # check for the end of the trajectory:
             if self.callback_count >= len(self.tvec):
                 rospy.loginfo("Trajectory complete!")
                 try:
@@ -253,6 +257,48 @@ class RecedingController:
                     rospy.loginfo("Service did not process request: %s"%str(e))
                 # now we can stop the robots
                 self.stop_robots()
+            
+
+            # self.callback_count += 1
+            # # first, let's update the EKF
+            # zk = tools.config_to_array(self.system, data)
+            # # print "zk = ",zk
+            # # print "xkk = ", self.ekf.xkk
+            # # print "uk = ", self.Uprev
+            # self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # # now we need to predict where we are going to be in +dt seconds
+            # Xstart = self.ekf.xkk
+            # # print zk
+            # # print Xstart
+            # # print self.Ukey
+            # self.dsyssim.set(Xstart, self.Ukey, 0)
+            # X0win = self.dsys.f()
+            # # rospy.signal_shutdown("test")
+            # # now get the reference trajectory
+            # ttmp = self.twin + (self.callback_count + 1)*self.dt
+            # Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
+            # # add to path info:
+            # # self.add_to_path_vectors(data, Xref[0], X0win)
+            # # build initial guess:
+            # X0, U0 = op.calc_initial_guess(self.dsys, X0win, Xref, Uref)
+            # # optimize:
+            # err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
+            #                                             Xref, Uref, X0, U0)
+            # if err:
+            #     rospy.logwarn("Received an error from optimizer!")
+            # # now set and send U:
+            # self.Uprev = U0[0]
+            # self.Ukey = U0[0]
+            # self.convert_and_send_input(self.Uprev)
+            # # is the trajectory finished?
+            # if self.callback_count >= len(self.tvec):
+            #     rospy.loginfo("Trajectory complete!")
+            #     try:
+            #         self.op_change_client(OperatingCondition(OperatingCondition.STOP))
+            #     except rospy.ServiceException, e:
+            #         rospy.loginfo("Service did not process request: %s"%str(e))
+            #     # now we can stop the robots
+            #     self.stop_robots()
 
         return
 
@@ -322,7 +368,7 @@ class RecedingController:
             ref_path.header.stamp = time_dat.current_real
             ref_path.header.frame_id = self.mass_ref_vec[-1].header.frame_id
             ref_path.poses = list(self.mass_ref_vec)
-            self.ref_path_pub.publish(ref_path)
+            # self.ref_path_pub.publish(ref_path)
 
         if len(self.mass_filt_vec) > 0:
             # send filtered path
@@ -330,7 +376,7 @@ class RecedingController:
             filt_path.header.stamp = time_dat.current_real
             filt_path.header.frame_id = self.mass_filt_vec[-1].header.frame_id
             filt_path.poses = list(self.mass_filt_vec)
-            self.filt_path_pub.publish(filt_path)
+            # self.filt_path_pub.publish(filt_path)
         return
     
 
@@ -358,14 +404,14 @@ class RecedingController:
         self.comm_pub.publish(com)
         return
 
-    
-    def convert_and_send_input(self, u2):
+
+    def convert_and_send_input(self, u1, u2):
         """
-        This function takes in an input (kinematic configs at t_{k+1}) and it
-        calculates the velocities between our current best estimate of where we
-        are and those positions.  Then sends those velocities to the robot.
+        This function takes in two sets of kinematic inputs, processes them, and
+        then sends them to the robot.
+        u1 ~ where we think the kin configs are now
+        u2 ~ where we want the kin configs to be in +dt seconds
         """
-        u1 = self.ekf.xkk[self.system.nQd:self.system.nQ]
         ucom = (u2-u1)/self.dt
         com = RobotCommands()
         com.robot_index = self.robot_index
@@ -378,6 +424,28 @@ class RecedingController:
         com.div = 3
         self.comm_pub.publish(com)
         return
+
+    
+        
+    # def convert_and_send_input(self, u2):
+    #     """
+    #     This function takes in an input (kinematic configs at t_{k+1}) and it
+    #     calculates the velocities between our current best estimate of where we
+    #     are and those positions.  Then sends those velocities to the robot.
+    #     """
+    #     u1 = self.ekf.xkk[self.system.nQd:self.system.nQ]
+    #     ucom = (u2-u1)/self.dt
+    #     com = RobotCommands()
+    #     com.robot_index = self.robot_index
+    #     com.type = ord('i')
+    #     com.v_robot = ucom[0]
+    #     com.w_robot = 0
+    #     com.rdot = 0
+    #     com.rdot_left = ucom[1]
+    #     com.rdot_right = 0
+    #     com.div = 3
+    #     self.comm_pub.publish(com)
+    #     return
 
     
     def stop_robots(self):
