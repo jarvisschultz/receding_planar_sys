@@ -261,49 +261,6 @@ class RecedingController:
                     rospy.loginfo("Service did not process request: %s"%str(e))
                 # now we can stop the robots
                 self.stop_robots()
-            
-
-            # self.callback_count += 1
-            # # first, let's update the EKF
-            # zk = tools.config_to_array(self.system, data)
-            # # print "zk = ",zk
-            # # print "xkk = ", self.ekf.xkk
-            # # print "uk = ", self.Uprev
-            # self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
-            # # now we need to predict where we are going to be in +dt seconds
-            # Xstart = self.ekf.xkk
-            # # print zk
-            # # print Xstart
-            # # print self.Ukey
-            # self.dsyssim.set(Xstart, self.Ukey, 0)
-            # X0win = self.dsys.f()
-            # # rospy.signal_shutdown("test")
-            # # now get the reference trajectory
-            # ttmp = self.twin + (self.callback_count + 1)*self.dt
-            # Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
-            # # add to path info:
-            # # self.add_to_path_vectors(data, Xref[0], X0win)
-            # # build initial guess:
-            # X0, U0 = op.calc_initial_guess(self.dsys, X0win, Xref, Uref)
-            # # optimize:
-            # err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
-            #                                             Xref, Uref, X0, U0)
-            # if err:
-            #     rospy.logwarn("Received an error from optimizer!")
-            # # now set and send U:
-            # self.Uprev = U0[0]
-            # self.Ukey = U0[0]
-            # self.convert_and_send_input(self.Uprev)
-            # # is the trajectory finished?
-            # if self.callback_count >= len(self.tvec):
-            #     rospy.loginfo("Trajectory complete!")
-            #     try:
-            #         self.op_change_client(OperatingCondition(OperatingCondition.STOP))
-            #     except rospy.ServiceException, e:
-            #         rospy.loginfo("Service did not process request: %s"%str(e))
-            #     # now we can stop the robots
-            #     self.stop_robots()
-
         return
 
     
@@ -428,28 +385,6 @@ class RecedingController:
         com.div = 3
         self.comm_pub.publish(com)
         return
-
-    
-        
-    # def convert_and_send_input(self, u2):
-    #     """
-    #     This function takes in an input (kinematic configs at t_{k+1}) and it
-    #     calculates the velocities between our current best estimate of where we
-    #     are and those positions.  Then sends those velocities to the robot.
-    #     """
-    #     u1 = self.ekf.xkk[self.system.nQd:self.system.nQ]
-    #     ucom = (u2-u1)/self.dt
-    #     com = RobotCommands()
-    #     com.robot_index = self.robot_index
-    #     com.type = ord('i')
-    #     com.v_robot = ucom[0]
-    #     com.w_robot = 0
-    #     com.rdot = 0
-    #     com.rdot_left = ucom[1]
-    #     com.rdot_right = 0
-    #     com.div = 3
-    #     self.comm_pub.publish(com)
-    #     return
 
     
     def stop_robots(self):

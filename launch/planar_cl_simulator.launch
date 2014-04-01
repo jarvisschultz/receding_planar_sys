@@ -7,6 +7,7 @@
   <arg name="freq" default="10.0" />
   <arg name="window" default="20" />
   <arg name="tf" default="10.0" /> 
+  <arg name="noise" default="0.0" />
 
   <!-- first let's add the static frame broadcaster that broadcasts frames in a default config -->
   <include file="$(find robot_simulator)/launch/default_calibration_frames.launch" />
@@ -17,11 +18,16 @@
     <arg name="rn" value="robot_1" />
     <!-- set all parameters for this namespace -->
     <param name="robot_index" value="$(arg index)" />
+    <param name="window_length" value="$(arg window)" type="int" />
+    <param name="controller_freq" value="$(arg freq)" type="double" />
+    <param name="time_final" value="$(arg tf)" type="double" />
+    <param name="/simulator_noise" value="$(arg noise)" type="double" />
+
     <include file="$(find robot_simulator)/launch/single_robot_simulator.launch" >
       <arg name="rn" value="$(arg rn)" />
     </include>
-
-    <param name="/simulator_noise" value="0.0" />
+    
+    <!-- start up trep simulation and visualizer for mass position -->
     <node pkg="robot_simulator" name="mass_simulator"
 	  type="suspended_mass_trep.py"
           output="screen" respawn="true" />
@@ -29,18 +35,9 @@
           output="screen" respawn="true" />
 
     <!-- now I want to set appropriate parameters and start up the controller -->
-    <param name="window_length" value="$(arg window)" type="int" />
-    <param name="controller_freq" value="$(arg freq)" type="double" />
-    <param name="time_final" value="$(arg tf)" type="double" />
     <node pkg="receding_planar_sys" name="receding_controller"
 	  type="receding_controller.py" output="screen" respawn="true" />
 	  <!-- launch-prefix="xterm -e" /> -->
-
-
-    <!-- start path generator if receding true -->
-    <!-- <node pkg="robot_simulator" name="path_generator"  -->
-    <!-- 	  type="receding_path_generator.py" output="screen" respawn="true" -->
-    <!-- 	  args="-f $(arg dir)$(arg file)" if="$(arg receding)"/> -->
   </group>
 
   <!-- start up the keyboard node -->
