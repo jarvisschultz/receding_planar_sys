@@ -220,13 +220,11 @@ class RecedingController:
             # reset filter:
             self.ekf.index = 0
             # get reference traj after initial dt:
-            Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt])
+            Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
             # send reference traj U and store:
+            self.convert_and_send_input(Xtmp[0][2:4], Xtmp[1][2:4])#self.Uprev, self.Ukey)
             self.Uprev = Utmp[0]
-            self.Ukey = Utmp[0]
-            # self.Uprev = Xtmp[1][2:4]
-            # self.Ukey = Xtmp[1][2:4]
-            self.convert_and_send_input(Xtmp[0][2:4], Utmp[0])
+            self.Ukey = Utmp[1]
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)

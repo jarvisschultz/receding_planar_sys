@@ -5,7 +5,7 @@ Later on I can update this file to do things like subscribe to some topic, store
 trajectory data, interpolate data, offset times from ROS time to optimization
 time, etc.
 """
-TPER = 10.0 # total time
+TPER = 5.0 # total time
 import numpy as np
 from math import pi
 import system_definition as sd
@@ -27,7 +27,7 @@ def calc_reference_traj(dsys, tvec):
         else:
             th = 2*pi + pi/2
         qd[i, xmi] = np.abs(np.cos(th))**(2.0/n)*rx*np.sign(np.cos(th))
-        qd[i, ymi] = np.abs(np.sin(th))**(2.0/n)*ry*np.sign(np.sin(th))
+        qd[i, ymi] = np.abs(np.sin(th))**(2.0/n)*ry*np.sign(np.sin(th)) - ry #subtract ry to ensure initial length is 1 meter
     # now let's calculate the inverse-kinematics based version of the kinematic
     # variables
     qk = np.zeros((len(tvec), dsys.system.nQk))
