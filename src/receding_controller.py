@@ -178,6 +178,7 @@ class RecedingController:
         time = req.t
         length = len(self.tvec)
         xtmp = X[0]
+        dt = self.dt
         return {'config' : config,
                 'state' : xtmp,
                 'dt' : dt,

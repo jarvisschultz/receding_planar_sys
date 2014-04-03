@@ -3,12 +3,14 @@
   <arg name="file" default="default.mat" />
   <arg name="dir" default="$(find robot_simulator)/data/" />
   <arg name="vis" default="true" />
-  <arg name="freq" default="30.0" />
-  <arg name="receding" default="false" />
-  <param name="/number_robots" type="int" value="1" />
+  <arg name="index" value="1" />
+  <arg name="freq" default="10.0" />
+  <arg name="window" default="20" />
+  <arg name="tf" default="10.0" /> 
+  <arg name="noise" default="0.0" />
   
   <!-- load serial node dictionary -->
-  <rosparam file="$(find serial_node)/data/closed_loop_controller_serial_device_dict.xml" 
+  <rosparam file="$(find serial_node)/data/planar_cl_controller_serial_device_dict.xml" 
 	    command="load"/>
 
   <!-- start up the kinect and both planar trackers -->
@@ -17,37 +19,33 @@
   </include>
 
   <group ns="robot_1" >
-    <param name="robot_index" type="int" value="1" />
+    <arg name="rn" value="robot_1" />
   </group>
 
   <!-- set all parameters for this namespace -->
-  <param name="robot_index" value="1" />
+  <param name="robot_index" value="$(arg index)" />
+  <param name="window_length" value="$(arg window)" type="int" />
+  <param name="controller_freq" value="$(arg freq)" type="double" />
+  <param name="time_final" value="$(arg tf)" type="double" />
+  <param name="/simulator_noise" value="$(arg noise)" type="double" />
+    
   <!-- slow kinect data to a lower frequency -->
   <node pkg="topic_tools" type="throttle" name="kinect_throttler"
 	args="messages /camera/depth/points $(arg freq)
 	      /camera/depth/points_throttled" 
 	respawn="true"/>
-  <!-- set a parameter telling the controller that it is running at freq -->
-  <param name="controller_freq" type="double" value="$(arg freq)"/>
+
   <!-- now I want to start up the controller/ filter, and the
        coordinator for the system -->
-  <node pkg="robot_simulator" name="controller"
-	type="planar_cl_controller.py" output="screen" respawn="true"
-	args="-f $(arg dir)$(arg file)" unless="$(arg receding)"/>
-  <node pkg="robot_simulator" name="receding_controller"
-	type="receding_planar_controller.py" output="screen" respawn="true"
-	if="$(arg receding)"/>
-  <node pkg="robot_simulator" name="coordinator"
-	type="planar_coordinator" output="screen" respawn="true" />
-  <node pkg="robot_simulator" name="path_generator" 
-	type="receding_path_generator.py" output="screen" respawn="true"
-	args="-f $(arg dir)$(arg file)" if="$(arg receding)"/>
+  <node pkg="receding_planar_sys" name="receding_controller"
+	type="receding_controller.py" output="screen" respawn="true" />
+  <node pkg="receding_planar_sys" name="coordinator"
+	type="receding_coordinator" output="screen" respawn="true" />
 
   <!-- start serial node -->
   <node pkg="serial_node" type="multi_serial_topic" name="serial_node"
     	output="log" respawn="true" />
-  
-  
+    
   <!-- start up the keyboard node -->
   <node pkg="keyboard_node" type="multi_keyboard_node"
 	name="keyboard_interface" output="screen" respawn="true"
