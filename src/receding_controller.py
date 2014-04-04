@@ -18,6 +18,7 @@ PUBLISHERS:
     - mass_filt_path (Path)
     - post_covariance (PlanarCovariance)
     - filt_state (PlanarSystemState)
+    - ref_state (PlanarSystemState)
     - start_time (Time)
 
 SERVICES:
@@ -139,6 +140,7 @@ class RecedingController:
         self.filt_pub = rospy.Publisher("filt_config", PlanarSystemConfig)
         self.filt_state_pub = rospy.Publisher("filt_state", PlanarSystemState)
         self.ref_pub = rospy.Publisher("ref_config", PlanarSystemConfig)
+        self.ref_state_pub = rospy.Publisher("ref_state", PlanarSystemState)
         self.comm_pub = rospy.Publisher("serial_commands", RobotCommands)
         self.ref_path_pub = rospy.Publisher("mass_ref_path", Path)
         self.filt_path_pub = rospy.Publisher("mass_filt_path", Path)
@@ -214,18 +216,41 @@ class RecedingController:
 
         if self.first_flag:
             rospy.loginfo("Beginning Trajectory")
+            # publish start time:
+            self.time_pub.publish(data.header.stamp)
             self.send_initial_config()
             self.tbase = data.header.stamp
             self.first_flag = False
             self.callback_count = 0
             # reset filter:
             self.ekf.index = 0
+            self.ekf.xkk = self.ekf.X0
+            self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
             # get reference traj after initial dt:
             Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
             # send reference traj U and store:
             self.convert_and_send_input(Xtmp[0][2:4], Xtmp[1][2:4])#self.Uprev, self.Ukey)
             self.Uprev = Utmp[0]
             self.Ukey = Utmp[1]
+            # publish filter data:
+            xmsg = PlanarSystemState()
+            qmsg = PlanarSystemConfig()
+            xmsg.header = data.header
+            qmsg.header = data.header
+            tools.array_to_state(self.system, self.ekf.xkk, xmsg)
+            tools.array_to_config(self.system, self.ekf.xkk[0:self.system.nQ], qmsg)
+            self.filt_state_pub.publish(xmsg)
+            self.filt_pub.publish(qmsg) 
+            # publish ref data:
+            xref = self.X0
+            xmsg = PlanarSystemState()
+            qmsg = PlanarSystemConfig()
+            xmsg.header = data.header
+            qmsg.header = data.header
+            tools.array_to_state(self.system, xref, xmsg)
+            tools.array_to_config(self.system, xref[0:self.system.nQ], qmsg)
+            self.ref_state_pub.publish(xmsg)
+            self.ref_pub.publish(qmsg)
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)
@@ -233,6 +258,25 @@ class RecedingController:
             self.convert_and_send_input(self.Uprev, self.Ukey) # instead of Uprev, could this come from the estimate from the EKF?
             # get updated estimate
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # publish filter data:
+            xmsg = PlanarSystemState()
+            qmsg = PlanarSystemConfig()
+            xmsg.header = data.header
+            qmsg.header = data.header
+            tools.array_to_state(self.system, self.ekf.xkk, xmsg)
+            tools.array_to_config(self.system, self.ekf.xkk[0:self.system.nQ], qmsg)
+            self.filt_state_pub.publish(xmsg)
+            self.filt_pub.publish(qmsg)
+            # publish ref data:
+            xref,uref = rm.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+            xmsg = PlanarSystemState()
+            qmsg = PlanarSystemConfig()
+            xmsg.header = data.header
+            qmsg.header = data.header
+            tools.array_to_state(self.system, xref[0], xmsg)
+            tools.array_to_config(self.system, xref[0][0:self.system.nQ], qmsg)
+            self.ref_state_pub.publish(xmsg)
+            self.ref_pub.publish(qmsg)
             # get prediction of where we will be in +dt seconds
             self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
             Xstart = self.dsyssim.f()
