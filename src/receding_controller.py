@@ -232,25 +232,8 @@ class RecedingController:
             self.convert_and_send_input(Xtmp[0][2:4], Xtmp[1][2:4])#self.Uprev, self.Ukey)
             self.Uprev = Utmp[0]
             self.Ukey = Utmp[1]
-            # publish filter data:
-            xmsg = PlanarSystemState()
-            qmsg = PlanarSystemConfig()
-            xmsg.header = data.header
-            qmsg.header = data.header
-            tools.array_to_state(self.system, self.ekf.xkk, xmsg)
-            tools.array_to_config(self.system, self.ekf.xkk[0:self.system.nQ], qmsg)
-            self.filt_state_pub.publish(xmsg)
-            self.filt_pub.publish(qmsg) 
-            # publish ref data:
-            xref = self.X0
-            xmsg = PlanarSystemState()
-            qmsg = PlanarSystemConfig()
-            xmsg.header = data.header
-            qmsg.header = data.header
-            tools.array_to_state(self.system, xref, xmsg)
-            tools.array_to_config(self.system, xref[0:self.system.nQ], qmsg)
-            self.ref_state_pub.publish(xmsg)
-            self.ref_pub.publish(qmsg)
+            # publish filtered and reference:
+            self.publish_state_and_config(self.ekf.xkk, self.X0)
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)
@@ -258,25 +241,9 @@ class RecedingController:
             self.convert_and_send_input(self.Uprev, self.Ukey) # instead of Uprev, could this come from the estimate from the EKF?
             # get updated estimate
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
-            # publish filter data:
-            xmsg = PlanarSystemState()
-            qmsg = PlanarSystemConfig()
-            xmsg.header = data.header
-            qmsg.header = data.header
-            tools.array_to_state(self.system, self.ekf.xkk, xmsg)
-            tools.array_to_config(self.system, self.ekf.xkk[0:self.system.nQ], qmsg)
-            self.filt_state_pub.publish(xmsg)
-            self.filt_pub.publish(qmsg)
-            # publish ref data:
+            # publish filtered and reference:
             xref,uref = rm.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
-            xmsg = PlanarSystemState()
-            qmsg = PlanarSystemConfig()
-            xmsg.header = data.header
-            qmsg.header = data.header
-            tools.array_to_state(self.system, xref[0], xmsg)
-            tools.array_to_config(self.system, xref[0][0:self.system.nQ], qmsg)
-            self.ref_state_pub.publish(xmsg)
-            self.ref_pub.publish(qmsg)
+            self.publish_state_and_config(self.ekf.xkk, xref[0])
             # get prediction of where we will be in +dt seconds
             self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
             Xstart = self.dsyssim.f()
@@ -363,6 +330,26 @@ class RecedingController:
         self.mass_ref_vec.append(pose2)
         return
 
+
+    def publish_state_and_config(self, Xfilt, Xref):
+        xmsg = PlanarSystemState()
+        qmsg = PlanarSystemConfig()
+        xmsg.header = data.header
+        qmsg.header = data.header
+        tools.array_to_state(self.system, Xfilt, xmsg)
+        tools.array_to_config(self.system, Xfilt[0:self.system.nQ], qmsg)
+        self.filt_state_pub.publish(xmsg)
+        self.filt_pub.publish(qmsg) 
+        # publish ref data:
+        xmsg = PlanarSystemState()
+        qmsg = PlanarSystemConfig()
+        xmsg.header = data.header
+        qmsg.header = data.header
+        tools.array_to_state(self.system, Xref, xmsg)
+        tools.array_to_config(self.system, Xref[0:self.system.nQ], qmsg)
+        self.ref_state_pub.publish(xmsg)
+        self.ref_pub.publish(qmsg)
+        return
 
         
     def path_timercb(self, time_dat):
