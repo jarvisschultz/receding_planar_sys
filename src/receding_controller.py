@@ -233,7 +233,7 @@ class RecedingController:
             self.Uprev = Utmp[0]
             self.Ukey = Utmp[1]
             # publish filtered and reference:
-            self.publish_state_and_config(self.ekf.xkk, self.X0)
+            self.publish_state_and_config(data, self.ekf.xkk, self.X0)
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)
@@ -243,7 +243,7 @@ class RecedingController:
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
             # publish filtered and reference:
             xref,uref = rm.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
-            self.publish_state_and_config(self.ekf.xkk, xref[0])
+            self.publish_state_and_config(data, self.ekf.xkk, xref[0])
             # get prediction of where we will be in +dt seconds
             self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
             Xstart = self.dsyssim.f()
@@ -331,7 +331,7 @@ class RecedingController:
         return
 
 
-    def publish_state_and_config(self, Xfilt, Xref):
+    def publish_state_and_config(self, data, Xfilt, Xref):
         xmsg = PlanarSystemState()
         qmsg = PlanarSystemConfig()
         xmsg.header = data.header
