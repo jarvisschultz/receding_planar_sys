@@ -39,6 +39,8 @@
 #include <puppeteer_msgs/PointPlus.h>
 #include <puppeteer_msgs/PlanarSystemConfig.h>
 #include <puppeteer_msgs/PlanarSystemService.h>
+#include <puppeteer_msgs/OperatingCondition.h>
+#include <puppeteer_msgs/OperatingConditionChange.h>
 #include <geometry_msgs/Point.h>
 #include <Eigen/Dense>
 #include <tf/transform_broadcaster.h>
@@ -81,7 +83,8 @@ private:
     Eigen::Vector3d robot_start_pos, mass_start_pos;
     tf::TransformListener tf;
     tf::TransformBroadcaster br;
-
+    puppeteer_msgs::OperatingCondition op_con_msg;
+    
 public:
     PlanarCoordinator () {
 	ROS_DEBUG("Instantiating a PlanarCoordinator Class");
@@ -136,7 +139,7 @@ public:
 
 	    // if not in run or calibrate, just exit
 	    if (run_system_logic())
-		return;
+	    	return;
 
 	    // let's first correct for the radii of the objects:
 	    r_pt = *robot_point;
@@ -240,44 +243,63 @@ public:
     bool run_system_logic(void)
 	{
 	    int operating_condition = 0;
-	    static bool first_flag = true;
+	    static int last_op_con = operating_condition;
 	    if(ros::param::has("/operating_condition"))
 	    {
-		if(first_flag == true)
-		{
-		    first_flag = false;
-		    ros::param::set("/operating_condition", 0);
-		}
-		else
-		    ros::param::getCached("/operating_condition", operating_condition);
+		ros::param::getCached("/operating_condition", operating_condition);
 	    }
 	    else
 	    {
 		ROS_WARN("Cannot Find Parameter: operating_condition");
 		ROS_INFO("Setting operating_condition to IDLE");
 		ros::param::set("/operating_condition", 0);
-      		return true;
 	    }
-
-	    if(operating_condition == 1 || operating_condition == 2)
+	    
+	    bool quit_cb_flag = false;
+	    if (operating_condition < last_op_con)
 	    {
-		return false;
+		ROS_DEBUG("Need to calibrate due to state downgrade");
+		calibrated_flag = false;
+		calibrate_count = 0;
 	    }
-	    // are we in idle or stop condition?
-	    else if(operating_condition == 0 || operating_condition == 3)
-		ROS_DEBUG("Estimator node is idle due to operating condition");
-
-	    // are we in emergency stop condition?
-	    else if(operating_condition == 4)
-		ROS_WARN_ONCE("Emergency Stop Requested");
-
-	    // otherwise something terrible has happened
+	    if (calibrated_flag) // if we're calibrated, callback should always run
+	    {
+		ROS_DEBUG_THROTTLE(1, "CASE 1");
+		quit_cb_flag = false;
+	    }
+	    else if (operating_condition != op_con_msg.CALIBRATE)
+	    {
+		ROS_DEBUG_THROTTLE(1, "CASE 2");
+		quit_cb_flag = true;
+	    }
 	    else
-		ROS_ERROR("Invalid value for operating_condition");
+	    {
+		ROS_DEBUG_THROTTLE(1, "CASE 3");
+		quit_cb_flag = false;
+	    }
+	    last_op_con = operating_condition;
+	    return quit_cb_flag;
+	    
+	    
+	    // if(operating_condition == 1 || operating_condition == 2)
+	    // {
+	    // 	return false;
+	    // }
+	    // // are we in idle or stop condition?
+	    // else if(operating_condition == 0 || operating_condition == 3)
+	    // 	ROS_DEBUG("Estimator node is idle due to operating condition");
 
-	    calibrated_flag = false;
-	    calibrate_count = 0;
-	    return true;	    
+	    // // are we in emergency stop condition?
+	    // else if(operating_condition == 4)
+	    // 	ROS_WARN_ONCE("Emergency Stop Requested");
+
+	    // // otherwise something terrible has happened
+	    // else
+	    // 	ROS_ERROR("Invalid value for operating_condition");
+
+	    // calibrated_flag = false;
+	    // calibrate_count = 0;
+	    // return true;	    
 	}
     
     // this function accounts for the size of the robot:

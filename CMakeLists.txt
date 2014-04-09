@@ -22,6 +22,13 @@ include_directories(${EIGEN_INCLUDE_DIRS})
 add_definitions(${EIGEN_DEFINITIONS})
 
 
+## define a function for automatically linking log4cxx:
+find_library(LOG4CXX_LIBRARY log4cxx)
+function(add_logging_executable name sources)
+    rosbuild_add_executable(${name} ${sources})
+    target_link_libraries(${name} ${LOG4CXX_LIBRARY})
+endfunction(add_logging_executable)
+
 rosbuild_add_executable(receding_coordinator src/receding_coordinator.cpp)
 rosbuild_link_boost(receding_coordinator signals)
 

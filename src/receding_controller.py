@@ -204,6 +204,10 @@ class RecedingController:
             self.send_initial_config()
             # self.first_flag = False
             return
+        elif op_cond is OperatingCondition.EMERGENCY:
+            # we need to stop robots!:
+            self.stop_robots()
+            return
         elif op_cond is not OperatingCondition.RUN:
             # we are not running, keep setting initializations
             self.first_flag = True
@@ -239,29 +243,53 @@ class RecedingController:
             zk = tools.config_to_array(self.system, data)
             # send old value to robot:
             self.convert_and_send_input(self.Uprev, self.Ukey) # instead of Uprev, could this come from the estimate from the EKF?
-            # get updated estimate
-            self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
-            # publish filtered and reference:
-            xref,uref = rm.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
-            self.publish_state_and_config(data, self.ekf.xkk, xref[0])
-            # get prediction of where we will be in +dt seconds
-            self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
-            Xstart = self.dsyssim.f()
-            # get reference traj
-            ttmp = self.twin + (self.callback_count + 1)*self.dt
-            Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
-            # get initial guess
-            X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
-            # add path information:
-            self.add_to_path_vectors(data, Xref[0], Xstart)
-            # optimize
-            err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
-                                                        Xref, Uref, X0, U0)
-            if err:
-                rospy.logwarn("Received an error from optimizer!")
+            try:
+                # get updated estimate
+                # self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+                # publish filtered and reference:
+                # xref,uref = rm.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+                # self.publish_state_and_config(data, self.ekf.xkk, xref[0])
+                # get prediction of where we will be in +dt seconds
+                # self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
+                # Xstart = self.dsyssim.f()
+                # get reference traj
+                ttmp = self.twin + (self.callback_count + 1)*self.dt
+                Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
+                # get initial guess
+                # X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
+                # add path information:
+                # self.add_to_path_vectors(data, Xref[0], Xstart)
+                # optimize
+                # err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
+                #                                             Xref, Uref, X0, U0)
+                # if err: rospy.logwarn("Received an error from optimizer!")
+            except ValueError as e:
+                rospy.logerr("Threw ValueError exception in receding_controller's meascb:")
+                rospy.logerr("Error: {0}".format(e.message))
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.EMERGENCY))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
+                self.stop_robots()
+            except sd.trep.ConvergenceError as e:
+                rospy.logerr("Threw ConvergenceError exception in receding_controller's meascb:")
+                rospy.logerr("Error: {0}".format(e.message))
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.EMERGENCY))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
+                self.stop_robots()
+            except:
+                rospy.logerr("Unknown exception!")
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.EMERGENCY))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
+                self.stop_robots()
             # store data:
             self.Uprev = self.Ukey
-            self.Ukey = U[0]
+            ## self.Ukey = U
+            self.Ukey = Uref[0]
             # check for the end of the trajectory:
             if self.callback_count >= len(self.tvec):
                 rospy.loginfo("Trajectory complete!")
