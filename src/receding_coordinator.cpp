@@ -31,6 +31,7 @@
 //---------------------------------------------------------------------------
 #include <iostream>
 #include <math.h>
+#include <vector>
 
 #include <ros/ros.h>
 #include <ros/console.h>
@@ -46,6 +47,8 @@
 #include <tf/transform_datatypes.h>
 #include <tf_conversions/tf_eigen.h>
 #include <Eigen/Core>
+// local:
+#include "state_intp.hpp"
 
 
 //---------------------------------------------------------------------------
@@ -57,6 +60,7 @@
 #define DEFAULT_ROBOT_RADIUS (ROBOT_CIRCUMFERENCE/M_PI/2.0/100.) // meters
 #define DEFAULT_MASS_RADIUS (0.05285/2.0) // meters
 #define H0 (1.0) // default height of robot in meters
+#define NUMBER_CONFIGS (20) // max number of measured configs to store at a time
 
 //---------------------------------------------------------------------------
 // Objects and Functions
@@ -81,9 +85,15 @@ private:
     Eigen::Vector3d robot_start_pos, mass_start_pos;
     tf::TransformListener tf;
     tf::TransformBroadcaster br;
-
+    std::vector<double> *tvec;
+    std::vector<state_type> *qvec;
+    
+    
 public:
-    PlanarCoordinator () {
+    PlanarCoordinator () :
+	tvec = new std::vector<double>(),
+	qvec = std::vector<
+	{
 	ROS_DEBUG("Instantiating a PlanarCoordinator Class");
 	// define subscribers, synchronizer, and the corresponding
 	// callback:
