@@ -61,6 +61,9 @@
 #define DEFAULT_MASS_RADIUS (0.05285/2.0) // meters
 #define H0 (1.0) // default height of robot in meters
 #define NUMBER_CONFIGS (20) // max number of measured configs to store at a time
+#define NQ (4) // number of configs
+#define NX (3) // number of values we will be filtering
+#define DEFAULT_FREQ (30)
 
 //---------------------------------------------------------------------------
 // Objects and Functions
@@ -77,22 +80,27 @@ private:
     message_filters::Subscriber<PointPlus> robot_kinect_sub;
     message_filters::Subscriber<PointPlus> mass_kinect_sub;
     message_filters::TimeSynchronizer<PointPlus, PointPlus> * sync;
+    ros::Timer timer;
     double robot_radius;
     PlanarSystemConfig q0;
-    bool calibrated_flag;
+    bool calibrated_flag, publish_flag;
     unsigned int calibrate_count;
     Eigen::Vector3d robot_cal_pos, mass_cal_pos, cal_pos;
     Eigen::Vector3d robot_start_pos, mass_start_pos;
     tf::TransformListener tf;
     tf::TransformBroadcaster br;
-    std::vector<double> *tvec;
-    std::vector<state_type> *qvec;
-    
+    std::vector<double> tvec_mass, tvec_robot;
+    std::vector<state_type> mass_vec;
+    std::vector<state_type> robot_vec;
+    state_intp mass_int;
+    state_intp robot_int;
+    PointPlus mass_last, robot_last;
+    double dt;
     
 public:
     PlanarCoordinator () :
-	tvec = new std::vector<double>(),
-	qvec = std::vector<
+	mass_int(mass_vec, tvec_mass, 2),
+	robot_int(robot_vec, tvec_robot, 2)
 	{
 	ROS_DEBUG("Instantiating a PlanarCoordinator Class");
 	// define subscribers, synchronizer, and the corresponding
@@ -106,6 +114,20 @@ public:
 	// define publisher
 	config_pub = node_.advertise<PlanarSystemConfig> ("meas_config", 100);
 
+	// look for frequency param, and setup timer
+	if (ros::param::has("controller_freq"))
+	{
+	    ros::param::get("controller_freq", dt);
+	    dt = 1/dt;
+	}
+	else
+	{
+	    ROS_WARN("controller_freq not set for coordinator node");
+	    ros::param::set("controller_freq", DEFAULT_FREQ);
+	    dt = 1/DEFAULT_FREQ;
+	}
+	timer = node_.createTimer(ros::Duration(dt), &PlanarCoordinator::timercb, this);
+	
 	// wait for service, and get the starting config:
 	ROS_INFO("Waiting for get_ref_config service:");
 	ROS_INFO("Will not continue until available...");
@@ -139,6 +161,22 @@ public:
 	return;
     }
 
+    
+    void timercb(const ros::TimerEvent& e)
+	{
+	    ROS_DEBUG("coordinator timercb");
+	    // return if we shouldn't do anything
+	    if (!publish_flag)
+		return;
+
+	    // so first we need to request the interpolated values for both
+	    // config
+	    
+	    
+	    return;
+	}
+    
+    
     void callback(const PointPlusConstPtr& robot_point, const PointPlusConstPtr& mass_point)
 	{
 	    ROS_DEBUG("Synchronized Callback triggered");
@@ -154,8 +192,31 @@ public:
 	    m_pt = *mass_point;
 	    m_pt = correct_vals(m_pt, DEFAULT_MASS_RADIUS);
 
+	    
+	    // error sorting:
+	    if (!r_pt.error)
+		// no error:
+		robot_last = r_pt;
+	    else {
+		// error:
+		r_pt.x = robot_last.x;
+		r_pt.y = robot_last.y;
+		r_pt.z = robot_last.z;
+	    }
+	    if (!m_pt.error)
+		// no error:
+		mass_last = m_pt;
+	    else {
+		// error:
+		m_pt.x = mass_last.x;
+		m_pt.y = mass_last.y;
+		m_pt.z = mass_last.z;
+	    }
+
+
 	    if (calibrated_flag == false)
 	    {
+		publish_flag = false;
 		if (calibrate_count == 0)
 		{
 		    calibrate_count++;
@@ -207,7 +268,8 @@ public:
 		    calibrated_flag = true;
 		}
 	    }
-	    
+
+	    publish_flag = true;
 	    // send global frame transforms:
 	    send_global_transforms(m_pt.header.stamp);
 
@@ -229,18 +291,39 @@ public:
 	    // transform mass:
 	    mass_trans << m_pt.x, m_pt.y, m_pt.z;
 	    mass_trans = gwo*mass_trans;
-	    // calculate string length:
-	    mass_trans(2) = 0; robot_trans(2) = 0;
-	    double rad = (mass_trans - robot_trans).norm();
-	    qmeas.xm = mass_trans(0);
-	    qmeas.ym = mass_trans(1);
-	    qmeas.xr = robot_trans(0);
-	    qmeas.r = rad;
-	    qmeas.mass_err = m_pt.error;
-	    qmeas.robot_err = r_pt.error;
-	    qmeas.header.stamp = m_pt.header.stamp;
-	    qmeas.header.frame_id = "optimization_frame";
-	    config_pub.publish(qmeas);
+
+	    // now we add the measured/transformed points into our interpolation
+	    // objects
+	    tvec_mass.push_back(m_pt.header.stamp.toSec());
+	    tvec_robot.push_back(r_pt.header.stamp.toSec());
+	    state_type xtmp(NX, 0);
+	    xtmp.assign((double*)mass_trans.data(), (double*)mass_trans.data() + NX);
+	    mass_vec.push_back(xtmp);
+	    xtmp.assign((double*)robot_trans.data(), (double*)robot_trans.data() + NX);
+	    robot_vec.push_back(xtmp);
+
+	    // pop off first entry if we have too many:
+	    if (tvec_mass.size() > NUMBER_CONFIGS)
+	    {
+		tvec_mass.erase(tvec_mass.begin());
+		tvec_robot.erase(tvec_robot.begin());
+		mass_vec.erase(mass_vec.begin());
+		robot_vec.erase(robot_vec.begin());
+	    }
+	    
+	    
+	    // // calculate string length:
+	    // mass_trans(2) = 0; robot_trans(2) = 0;
+	    // double rad = (mass_trans - robot_trans).norm();
+	    // qmeas.xm = mass_trans(0);
+	    // qmeas.ym = mass_trans(1);
+	    // qmeas.xr = robot_trans(0);
+	    // qmeas.r = rad;
+	    // qmeas.mass_err = m_pt.error;
+	    // qmeas.robot_err = r_pt.error;
+	    // qmeas.header.stamp = m_pt.header.stamp;
+	    // qmeas.header.frame_id = "optimization_frame";
+	    // config_pub.publish(qmeas);
 		    
 	    return;
 	}

@@ -35,11 +35,10 @@ public:
 	  m_states( &states ) ,
 	  m_times( &times )
 	{
-	    try { m_xlen = states[0].size(); throw size_t(states.size()); }
-	    catch( size_t sz ) { 
-		std::cout << "Exception initializing m_xlen from states[0].size()"
-			  << " in state_intp constructor. States vector is of length: "
-			  << sz << "\n";
+	    try { m_xlen = states.at(0).size(); }
+	    catch( const std::exception& e ) { 
+		std::cout << "Exception initializing m_xlen from states.at(0).size()"
+			  << " in state_intp constructor.  " << e.what() <<"\n";
 	    }
 	    
 	}
