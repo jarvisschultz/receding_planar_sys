@@ -175,7 +175,7 @@ public:
 	    // first we need to request the interpolated values for both configs
 	    state_type mq(NX);
 	    state_type rq(NX);
-	    double t = e.current_expected.toSec();
+	    double t = e.current_expected.toSec() - dt;
 	    if (mass_int(t, mq))
 		ROS_WARN("Mass time requested (%f) outside of range [%f, %f]",
 			 t, tvec_mass.front(), tvec_mass.back());

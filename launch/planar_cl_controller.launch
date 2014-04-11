@@ -5,6 +5,7 @@
   <arg name="vis" default="true" />
   <arg name="index" value="1" />
   <arg name="freq" default="10.0" />
+  <arg name="simfreq" default="30.0" />
   <arg name="window" default="20" />
   <arg name="tf" default="10.0" /> 
   <arg name="noise" default="0.0" />
@@ -15,7 +16,7 @@
 
   <!-- start up the kinect and both planar trackers -->
   <include file="$(find objecttracker_nu)/launch/nodelet_planar_system.launch" >
-    <arg name="input" value="points_throttled" />
+    <arg name="input" value="points" />
   </include>
 
   <group ns="robot_1" >
@@ -26,14 +27,15 @@
   <param name="robot_index" value="$(arg index)" />
   <param name="window_length" value="$(arg window)" type="int" />
   <param name="controller_freq" value="$(arg freq)" type="double" />
+  <param name="simulator_freq" value="$(arg simfreq)" type="double" />
   <param name="time_final" value="$(arg tf)" type="double" />
   <param name="/simulator_noise" value="$(arg noise)" type="double" />
     
-  <!-- slow kinect data to a lower frequency -->
-  <node pkg="topic_tools" type="throttle" name="kinect_throttler"
-	args="messages /camera/depth/points $(arg freq)
-	      /camera/depth/points_throttled" 
-	respawn="true"/>
+  <!-- <!-\- slow kinect data to a lower frequency -\-> -->
+  <!-- <node pkg="topic_tools" type="throttle" name="kinect_throttler" -->
+  <!-- 	args="messages /camera/depth/points $(arg freq) -->
+  <!-- 	      /camera/depth/points_throttled"  -->
+  <!-- 	respawn="true"/> -->
 
   <!-- now I want to start up the controller/ filter, and the
        coordinator for the system -->
