@@ -247,48 +247,44 @@ public:
 
     // run all logic related to the operating condition... return
     // 'true' if we should exit the callback
-    bool run_system_logic(void)
+bool run_system_logic(void)
 	{
 	    int operating_condition = 0;
-	    static bool first_flag = true;
+	    static int last_op_con = operating_condition;
 	    if(ros::param::has("/operating_condition"))
 	    {
-		if(first_flag == true)
-		{
-		    first_flag = false;
-		    ros::param::set("/operating_condition", 0);
-		}
-		else
-		    ros::param::getCached("/operating_condition", operating_condition);
+		ros::param::getCached("/operating_condition", operating_condition);
 	    }
 	    else
 	    {
 		ROS_WARN("Cannot Find Parameter: operating_condition");
 		ROS_INFO("Setting operating_condition to IDLE");
 		ros::param::set("/operating_condition", 0);
-      		return true;
 	    }
-
-	    if(operating_condition == 1 || operating_condition == 2)
+	    
+	    bool quit_cb_flag = false;
+	    if (operating_condition < last_op_con)
 	    {
-		return false;
+		ROS_DEBUG("Need to calibrate due to state downgrade");
+		calibrated_flag = false;
+		calibrate_count = 0;
 	    }
-	    // are we in idle or stop condition?
-	    else if(operating_condition == 0 || operating_condition == 3)
-		ROS_DEBUG("Estimator node is idle due to operating condition");
-
-	    // are we in emergency stop condition?
-	    else if(operating_condition == 4)
-		ROS_WARN_ONCE("Emergency Stop Requested");
-
-	    // otherwise something terrible has happened
+	    if (calibrated_flag) // if we're calibrated, callback should always run
+	    {
+		quit_cb_flag = false;
+	    }
+	    else if (operating_condition != op_con_msg.CALIBRATE)
+	    {
+		quit_cb_flag = true;
+	    }
 	    else
-		ROS_ERROR("Invalid value for operating_condition");
-
-	    calibrated_flag = false;
-	    calibrate_count = 0;
-	    return true;	    
+	    {
+		quit_cb_flag = false;
+	    }
+	    last_op_con = operating_condition;
+	    return quit_cb_flag;
 	}
+
     
     // this function accounts for the size of the robot:
     puppeteer_msgs::PointPlus correct_vals(puppeteer_msgs::PointPlus &p, double radius)
