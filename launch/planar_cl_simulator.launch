@@ -8,6 +8,7 @@
   <arg name="window" default="20" />
   <arg name="tf" default="10.0" /> 
   <arg name="noise" default="0.0" />
+  <arg name="simfreq" default="30.0" />
 
   <!-- first let's add the static frame broadcaster that broadcasts frames in a default config -->
   <include file="$(find robot_simulator)/launch/default_calibration_frames.launch" />
@@ -20,6 +21,7 @@
     <param name="robot_index" value="$(arg index)" />
     <param name="window_length" value="$(arg window)" type="int" />
     <param name="controller_freq" value="$(arg freq)" type="double" />
+    <param name="simulator_freq" value="$(arg simfreq)" type="double" />
     <param name="time_final" value="$(arg tf)" type="double" />
     <param name="/simulator_noise" value="$(arg noise)" type="double" />
 

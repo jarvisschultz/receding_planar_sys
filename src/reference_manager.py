@@ -5,7 +5,7 @@ Later on I can update this file to do things like subscribe to some topic, store
 trajectory data, interpolate data, offset times from ROS time to optimization
 time, etc.
 """
-TPER = 5.0 # total time
+TPER = 10.0 # total time
 import numpy as np
 from math import pi
 import system_definition as sd
