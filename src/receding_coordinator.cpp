@@ -40,6 +40,8 @@
 #include <puppeteer_msgs/PointPlus.h>
 #include <puppeteer_msgs/PlanarSystemConfig.h>
 #include <puppeteer_msgs/PlanarSystemService.h>
+#include <puppeteer_msgs/OperatingCondition.h>
+#include <puppeteer_msgs/OperatingConditionChange.h>
 #include <geometry_msgs/Point.h>
 #include <Eigen/Dense>
 #include <tf/transform_broadcaster.h>
@@ -89,6 +91,7 @@ private:
     Eigen::Vector3d robot_start_pos, mass_start_pos;
     tf::TransformListener tf;
     tf::TransformBroadcaster br;
+    puppeteer_msgs::OperatingCondition op_con_msg;
     std::vector<double> tvec_mass, tvec_robot;
     std::vector<state_type> mass_vec;
     std::vector<state_type> robot_vec;
@@ -169,9 +172,33 @@ public:
 	    if (!publish_flag)
 		return;
 
-	    // so first we need to request the interpolated values for both
-	    // config
-	    
+	    // first we need to request the interpolated values for both configs
+	    state_type mq(NX);
+	    state_type rq(NX);
+	    double t = e.current_expected.toSec();
+	    if (mass_int(t, mq))
+		ROS_WARN("Mass time requested (%f) outside of range [%f, %f]",
+			 t, tvec_mass.front(), tvec_mass.back());
+	    if (robot_int(t, mq))
+		ROS_WARN("Robot time requested (%f) outside of range [%f, %f]",
+			 t, tvec_robot.front(), tvec_robot.back());
+	    // convert vectors to Eigen:
+	    Eigen::Vector3d mqe(mq.data());
+	    Eigen::Vector3d rqe(rq.data());
+
+	    // now we can build a message and publish:
+	    PlanarSystemConfig qmeas;
+	    mqe(2) = 0; rqe(2) = 0; // project
+	    double rad = (mqe - rqe).norm(); // calc string len
+	    qmeas.xm = mqe(0);
+	    qmeas.ym = mqe(1);
+	    qmeas.xr = rqe(0);
+	    qmeas.r = rad;
+	    // qmeas.mass_err = m_pt.error;
+	    // qmeas.robot_err = r_pt.error;
+	    qmeas.header.stamp = e.current_expected;
+	    qmeas.header.frame_id = "optimization_frame";
+	    config_pub.publish(qmeas);
 	    
 	    return;
 	}
@@ -277,7 +304,6 @@ public:
 	    // optimization_frame, build the output message, and
 	    // publish
 	    tf::Transform transform;
-	    PlanarSystemConfig qmeas;
 	    Eigen::Affine3d gwo;
 	    Eigen::Vector3d robot_trans, mass_trans;
 	    transform.setOrigin(tf::Vector3(cal_pos(0),
@@ -311,20 +337,6 @@ public:
 		robot_vec.erase(robot_vec.begin());
 	    }
 	    
-	    
-	    // // calculate string length:
-	    // mass_trans(2) = 0; robot_trans(2) = 0;
-	    // double rad = (mass_trans - robot_trans).norm();
-	    // qmeas.xm = mass_trans(0);
-	    // qmeas.ym = mass_trans(1);
-	    // qmeas.xr = robot_trans(0);
-	    // qmeas.r = rad;
-	    // qmeas.mass_err = m_pt.error;
-	    // qmeas.robot_err = r_pt.error;
-	    // qmeas.header.stamp = m_pt.header.stamp;
-	    // qmeas.header.frame_id = "optimization_frame";
-	    // config_pub.publish(qmeas);
-		    
 	    return;
 	}
 
@@ -350,6 +362,7 @@ bool run_system_logic(void)
 	    {
 		ROS_DEBUG("Need to calibrate due to state downgrade");
 		calibrated_flag = false;
+		publish_flag = false;
 		calibrate_count = 0;
 	    }
 	    if (calibrated_flag) // if we're calibrated, callback should always run
@@ -359,6 +372,7 @@ bool run_system_logic(void)
 	    else if (operating_condition != op_con_msg.CALIBRATE)
 	    {
 		quit_cb_flag = true;
+		publish_flag = false;
 	    }
 	    else
 	    {
