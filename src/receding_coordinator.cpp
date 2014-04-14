@@ -207,12 +207,6 @@ public:
     
     void callback(const PointPlusConstPtr& robot_point, const PointPlusConstPtr& mass_point)
 	{
-	    // ros::Time tnow = ros::Time::now();
-	    // std::cout << "Mass Point Time = " << mass_point->header.stamp <<
-	    // 	" Robot Point Time = " << robot_point->header.stamp << std::endl;
-	    // std::cout << "Current Time = " << tnow << " MDelay = " << (tnow - mass_point->header.stamp).toSec()
-	    // 	      << std::endl << std::endl;
-
 	    ROS_DEBUG("Synchronized Callback triggered");
 	    puppeteer_msgs::PointPlus r_pt, m_pt;
 
