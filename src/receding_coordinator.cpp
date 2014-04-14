@@ -102,20 +102,20 @@ private:
     
 public:
     PlanarCoordinator () :
-	mass_int(mass_vec, tvec_mass, 2),
-	robot_int(robot_vec, tvec_robot, 2)
+	mass_int(mass_vec, tvec_mass, NQ/2),
+	robot_int(robot_vec, tvec_robot, NQ/2)
 	{
 	ROS_DEBUG("Instantiating a PlanarCoordinator Class");
 	// define subscribers, synchronizer, and the corresponding
 	// callback:
-	robot_kinect_sub.subscribe(node_, "robot_kinect_position", 10);
-	mass_kinect_sub.subscribe(node_, "object1_position", 10);
+	robot_kinect_sub.subscribe(node_, "robot_kinect_position", 1);
+	mass_kinect_sub.subscribe(node_, "object1_position", 1);
 	sync = new message_filters::TimeSynchronizer<PointPlus, PointPlus>
 	    (robot_kinect_sub, mass_kinect_sub, 10);
 	sync->registerCallback(boost::bind(
 				   &PlanarCoordinator::callback, this, _1, _2));
 	// define publisher
-	config_pub = node_.advertise<PlanarSystemConfig> ("meas_config", 100);
+	config_pub = node_.advertise<PlanarSystemConfig> ("meas_config", 10);
 
 	// look for frequency param, and setup timer
 	if (ros::param::has("controller_freq"))
@@ -175,11 +175,11 @@ public:
 	    // first we need to request the interpolated values for both configs
 	    state_type mq(NX);
 	    state_type rq(NX);
-	    double t = e.current_expected.toSec() - dt;
+	    double t = e.current_expected.toSec();
 	    if (mass_int(t, mq))
 		ROS_WARN("Mass time requested (%f) outside of range [%f, %f]",
 			 t, tvec_mass.front(), tvec_mass.back());
-	    if (robot_int(t, mq))
+	    if (robot_int(t, rq))
 		ROS_WARN("Robot time requested (%f) outside of range [%f, %f]",
 			 t, tvec_robot.front(), tvec_robot.back());
 	    // convert vectors to Eigen:
@@ -318,10 +318,17 @@ public:
 	    mass_trans << m_pt.x, m_pt.y, m_pt.z;
 	    mass_trans = gwo*mass_trans;
 
+	    // double xholder = sin(m_pt.header.stamp.toSec());
+	    // double yholder = sin(2*m_pt.header.stamp.toSec());
+	    // mass_trans << xholder,yholder,0.0;
+	    // robot_trans << xholder,yholder+1.0,0.0;
+	    
 	    // now we add the measured/transformed points into our interpolation
 	    // objects
-	    tvec_mass.push_back(m_pt.header.stamp.toSec());
-	    tvec_robot.push_back(r_pt.header.stamp.toSec());
+	    // tvec_mass.push_back(m_pt.header.stamp.toSec());
+	    // tvec_robot.push_back(r_pt.header.stamp.toSec());
+	    tvec_mass.push_back(ros::Time::now().toSec());
+	    tvec_robot.push_back(ros::Time::now().toSec());
 	    state_type xtmp(NX, 0);
 	    xtmp.assign((double*)mass_trans.data(), (double*)mass_trans.data() + NX);
 	    mass_vec.push_back(xtmp);
