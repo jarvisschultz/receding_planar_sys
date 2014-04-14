@@ -176,12 +176,13 @@ public:
 	    state_type mq(NX);
 	    state_type rq(NX);
 	    double t = e.current_expected.toSec();
-	    if (mass_int(t, mq))
-		ROS_WARN("Mass time requested (%f) outside of range [%f, %f]",
-			 t, tvec_mass.front(), tvec_mass.back());
-	    if (robot_int(t, rq))
-		ROS_WARN("Robot time requested (%f) outside of range [%f, %f]",
-			 t, tvec_robot.front(), tvec_robot.back());
+	    if (!mass_int(t, mq))
+	    	ROS_WARN("Mass time requested (%f) inside of range [%f, %f]",
+	    		 t, tvec_mass.front(), tvec_mass.back());
+	    if (!robot_int(t, rq))
+		ROS_WARN("Robot time requested (%f) inside of range [%f, %f]",
+	    		 t, tvec_robot.front(), tvec_robot.back());
+
 	    // convert vectors to Eigen:
 	    Eigen::Vector3d mqe(mq.data());
 	    Eigen::Vector3d rqe(rq.data());
@@ -206,6 +207,12 @@ public:
     
     void callback(const PointPlusConstPtr& robot_point, const PointPlusConstPtr& mass_point)
 	{
+	    // ros::Time tnow = ros::Time::now();
+	    // std::cout << "Mass Point Time = " << mass_point->header.stamp <<
+	    // 	" Robot Point Time = " << robot_point->header.stamp << std::endl;
+	    // std::cout << "Current Time = " << tnow << " MDelay = " << (tnow - mass_point->header.stamp).toSec()
+	    // 	      << std::endl << std::endl;
+
 	    ROS_DEBUG("Synchronized Callback triggered");
 	    puppeteer_msgs::PointPlus r_pt, m_pt;
 
