@@ -318,15 +318,8 @@ public:
 	    mass_trans << m_pt.x, m_pt.y, m_pt.z;
 	    mass_trans = gwo*mass_trans;
 
-	    // double xholder = sin(m_pt.header.stamp.toSec());
-	    // double yholder = sin(2*m_pt.header.stamp.toSec());
-	    // mass_trans << xholder,yholder,0.0;
-	    // robot_trans << xholder,yholder+1.0,0.0;
-	    
 	    // now we add the measured/transformed points into our interpolation
 	    // objects
-	    // tvec_mass.push_back(m_pt.header.stamp.toSec());
-	    // tvec_robot.push_back(r_pt.header.stamp.toSec());
 	    tvec_mass.push_back(ros::Time::now().toSec());
 	    tvec_robot.push_back(ros::Time::now().toSec());
 	    state_type xtmp(NX, 0);
