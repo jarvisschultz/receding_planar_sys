@@ -26,6 +26,10 @@ def calc_reference_traj(dsys, tvec):
             th = t*2*pi/TPER + pi/2
         else:
             th = 2*pi + pi/2
+        # if t <= 0.1:
+        #     th = pi/2.0
+        # else:
+        #     th = 0
         qd[i, xmi] = np.abs(np.cos(th))**(2.0/n)*rx*np.sign(np.cos(th))
         qd[i, ymi] = np.abs(np.sin(th))**(2.0/n)*ry*np.sign(np.sin(th)) - ry #subtract ry to ensure initial length is 1 meter
     # now let's calculate the inverse-kinematics based version of the kinematic

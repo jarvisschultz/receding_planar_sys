@@ -87,7 +87,7 @@ class RecedingController:
         
         # create optimizer and cost matrices
         self.optimizer = op.RecedingOptimizer(self.system, self.twin, DT=self.dt)
-        self.Qcost = np.diag([20, 20, 0.1, 0.1, 0.1, 0.1, 1, 1])
+        self.Qcost = np.diag([40, 40, 0.1, 0.1, 0.1, 0.1, 1, 1])
         self.Rcost = np.diag([0.1, 0.1])
 
 
@@ -237,10 +237,10 @@ class RecedingController:
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)
-            # send old value to robot:
-            self.convert_and_send_input(self.Uprev, self.Ukey) # instead of Uprev, could this come from the estimate from the EKF?
             # get updated estimate
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # send old value to robot:
+            self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
             # publish filtered and reference:
             xref,uref = rm.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
             self.publish_state_and_config(data, self.ekf.xkk, xref[0])
