@@ -56,9 +56,12 @@
 //---------------------------------------------------------------------------
 // Global Variables
 //---------------------------------------------------------------------------
-#define NUM_CALIBRATES (30)
-#define NUM_EKF_INITS (3)
+#define NUM_CALIBRATES (60)
 #define ROBOT_CIRCUMFERENCE (57.5) // centimeters
+// hand-tuned offsets:
+#define ROBOT_XOFFSET (-0.005)
+#define ROBOT_YOFFSET (-0.030)
+#define ROBOT_ZOFFSET (0.039)
 #define DEFAULT_ROBOT_RADIUS (ROBOT_CIRCUMFERENCE/M_PI/2.0/100.) // meters
 #define DEFAULT_MASS_RADIUS (0.05285/2.0) // meters
 #define H0 (1.0) // default height of robot in meters
@@ -99,7 +102,7 @@ private:
     state_intp robot_int;
     PointPlus mass_last, robot_last;
     double dt;
-    
+
 public:
     PlanarCoordinator () :
 	mass_int(mass_vec, tvec_mass, NQ/2),
@@ -130,7 +133,7 @@ public:
 	    dt = 1/DEFAULT_FREQ;
 	}
 	timer = node_.createTimer(ros::Duration(dt), &PlanarCoordinator::timercb, this);
-	
+
 	// wait for service, and get the starting config:
 	ROS_INFO("Waiting for get_ref_config service:");
 	ROS_INFO("Will not continue until available...");
@@ -154,8 +157,8 @@ public:
 	// set all default variables:
 	calibrated_flag = false;
 	calibrate_count = 0;
-	
-	
+
+
 	return;
     }
 
@@ -164,7 +167,7 @@ public:
 	return;
     }
 
-    
+
     void timercb(const ros::TimerEvent& e)
 	{
 	    ROS_DEBUG("coordinator timercb");
@@ -200,11 +203,11 @@ public:
 	    qmeas.header.stamp = e.current_expected;
 	    qmeas.header.frame_id = "optimization_frame";
 	    config_pub.publish(qmeas);
-	    
+
 	    return;
 	}
-    
-    
+
+
     void callback(const PointPlusConstPtr& robot_point, const PointPlusConstPtr& mass_point)
 	{
 	    ROS_DEBUG("Synchronized Callback triggered");
@@ -214,13 +217,16 @@ public:
 	    if (run_system_logic())
 		return;
 
+
 	    // let's first correct for the radii of the objects:
 	    r_pt = *robot_point;
 	    r_pt = correct_vals(r_pt, DEFAULT_ROBOT_RADIUS);
 	    m_pt = *mass_point;
 	    m_pt = correct_vals(m_pt, DEFAULT_MASS_RADIUS);
 
-	    
+	    // account for transform from robot centroid to string mount point:
+	    r_pt = robot_centroid_to_hook(r_pt);
+
 	    // error sorting:
 	    if (!r_pt.error)
 		// no error:
@@ -279,7 +285,7 @@ public:
 		    mass_cal_pos = (mass_cal_pos/((double) NUM_CALIBRATES));
 		    // now set start positions:
 		    mass_start_pos << q0.xm, q0.ym, 0;
-		    robot_start_pos << q0.xr, H0, 0;
+		    robot_start_pos << q0.xr, q0.ym + q0.r, 0; // must start at equilibrium
 		    // now get the transform:
 		    mass_cal_pos -= mass_start_pos;
 		    robot_cal_pos -= robot_start_pos;
@@ -288,8 +294,7 @@ public:
                     // ERROR CHECK	  //
                     ////////////////////////
 		    // if no error:
-		    // cal_pos = (mass_cal_pos + robot_cal_pos)/2.0;
-		    cal_pos = mass_cal_pos;
+		    cal_pos = (mass_cal_pos + robot_cal_pos)/2.0;
 
 		    // reset vars:
 		    calibrate_count = 0;
@@ -307,17 +312,34 @@ public:
 	    tf::Transform transform;
 	    Eigen::Affine3d gwo;
 	    Eigen::Vector3d robot_trans, mass_trans;
-	    transform.setOrigin(tf::Vector3(cal_pos(0),
-					    cal_pos(1), cal_pos(2)));
 	    transform.setRotation(tf::Quaternion(0,0,0,1));
+
+            // transform robot:
+	    transform.setOrigin(tf::Vector3(robot_cal_pos(0),
+					    robot_cal_pos(1), robot_cal_pos(2)));
 	    tf::TransformTFToEigen(transform, gwo);
 	    gwo = gwo.inverse();
-	    // transform robot:
 	    robot_trans << r_pt.x, r_pt.y, r_pt.z;
 	    robot_trans = gwo*robot_trans;
 	    // transform mass:
+	    transform.setOrigin(tf::Vector3(mass_cal_pos(0),
+					    mass_cal_pos(1), mass_cal_pos(2)));
+	    tf::TransformTFToEigen(transform, gwo);
+	    gwo = gwo.inverse();
 	    mass_trans << m_pt.x, m_pt.y, m_pt.z;
 	    mass_trans = gwo*mass_trans;
+
+	    // send transforms:
+	    transform.setOrigin(tf::Vector3(robot_trans(0), robot_trans(1),
+					    robot_trans(2)));
+	    br.sendTransform(tf::StampedTransform(transform, m_pt.header.stamp,
+						  "optimization_frame",
+						  "robot_hook_meas"));
+	    transform.setOrigin(tf::Vector3(mass_trans(0), mass_trans(1),
+					    mass_trans(2)));
+	    br.sendTransform(tf::StampedTransform(transform, m_pt.header.stamp,
+						  "optimization_frame",
+						  "mass_centroid_meas"));
 
 	    // now we add the measured/transformed points into our interpolation
 	    // objects
@@ -337,13 +359,13 @@ public:
 		mass_vec.erase(mass_vec.begin());
 		robot_vec.erase(robot_vec.begin());
 	    }
-	    
+
 	    return;
 	}
 
     // run all logic related to the operating condition... return
     // 'true' if we should exit the callback
-bool run_system_logic(void)
+    bool run_system_logic(void)
 	{
 	    int operating_condition = 0;
 	    static int last_op_con = operating_condition;
@@ -357,7 +379,7 @@ bool run_system_logic(void)
 		ROS_INFO("Setting operating_condition to IDLE");
 		ros::param::set("/operating_condition", 0);
 	    }
-	    
+
 	    bool quit_cb_flag = false;
 	    if (operating_condition < last_op_con)
 	    {
@@ -383,14 +405,27 @@ bool run_system_logic(void)
 	    return quit_cb_flag;
 	}
 
-    
+
+    puppeteer_msgs::PointPlus robot_centroid_to_hook(const puppeteer_msgs::PointPlus &p)
+	{
+	    ROS_DEBUG("Centroid to hook correction called");
+	    puppeteer_msgs::PointPlus point = p;
+
+	    point.x += ROBOT_XOFFSET;
+	    point.y += ROBOT_YOFFSET;
+	    point.z += ROBOT_ZOFFSET;
+
+	    return(point);
+	}
+
+
     // this function accounts for the size of the robot:
-    puppeteer_msgs::PointPlus correct_vals(puppeteer_msgs::PointPlus &p, double radius)
+    puppeteer_msgs::PointPlus correct_vals(const puppeteer_msgs::PointPlus &p, const double radius)
 	{
 	    ROS_DEBUG("correct_vals called");
 	    puppeteer_msgs::PointPlus point;
 	    point = p;
-	    	    
+
 	    // let's create a unit vector from the kinect frame to the
 	    // robot's location
 	    Eigen::Vector3d ur;
@@ -399,12 +434,12 @@ bool run_system_logic(void)
 	    ur = ur/ur.norm();
 	    // now we can correct the values of point
 	    ur = ur*radius;
-	    
+
 	    point.x = point.x+ur(0);
 	    point.y = point.y+ur(1);
 	    point.z = point.z+ur(2);
-	    
-	    return(point);	    	    
+
+	    return(point);
 	}
 
 
@@ -422,7 +457,6 @@ bool run_system_logic(void)
 						  "oriented_optimization_frame",
 						  "optimization_frame"));
 
-	    
 	    // publish the map frame at same height as the Kinect
 	    transform.setOrigin(tf::Vector3(cal_pos(0),
 					    0,
@@ -431,7 +465,7 @@ bool run_system_logic(void)
 	    br.sendTransform(tf::StampedTransform(transform, tstamp,
 						  "oriented_optimization_frame",
 						  "map"));
-	    
+
 	    // publish one more frame that is the frame the robot
 	    // calculates its odometry in.
 	    transform.setOrigin(tf::Vector3(0,0,0));
@@ -439,7 +473,7 @@ bool run_system_logic(void)
 	    br.sendTransform(tf::StampedTransform(transform, tstamp,
 						  "map",
 						  "robot_odom_pov"));
-	    
+
 	    return;
 	}
 

@@ -17,7 +17,7 @@ def calc_reference_traj(dsys, tvec):
     ymi = dsys.system.get_config('ym').index
     # shape params:
     # TPER = 12 # seconds to traverse one period
-    rx = 1.5/2 # 1/2 width in meters
+    rx = 1.0/2 # 1/2 width in meters
     ry = 0.25/2 # 1/2 height in meters
     n = 2.5 # power of the ellipse
     # fill out desired dynamic vars:
