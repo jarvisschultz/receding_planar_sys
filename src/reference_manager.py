@@ -23,7 +23,8 @@ def calc_reference_traj(dsys, tvec):
     # fill out desired dynamic vars:
     for i,t in enumerate(tvec):
         if t <= TPER:
-            th = t*2*pi/TPER + pi/2
+            ttmp = t*(1-np.exp(-t*(TPER/8.0)))
+            th = ttmp*2*pi/TPER + pi/2
         else:
             th = 2*pi + pi/2
         # if t <= 0.1:
