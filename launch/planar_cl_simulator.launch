@@ -15,6 +15,7 @@
   <arg name="power" default="2.5" /> <!-- power of superellipse -->
   <!-- inverse of exponential ramp time constant (0.0 means no ramp, higher numbers mean slower ramp -->
   <arg name="exponent" default="0.0" /> 
+  <arg name="r0" default="1.0" /> <!-- initial length of string in meters -->
   
   <!-- first let's add the static frame broadcaster that broadcasts frames in a default config -->
   <include file="$(find robot_simulator)/launch/default_calibration_frames.launch" />
@@ -50,6 +51,7 @@
       <param name="ry" value="$(arg ry)" type="double"/>
       <param name="power" value="$(arg power)" type="double"/>
       <param name="exponent" value="$(arg exponent)" type="double"/>
+      <param name="r0" value="$(arg r0)" type="double"/>
     </node>
   </group>
 

@@ -88,7 +88,7 @@ class RecedingController:
         
         # create optimizer and cost matrices
         self.optimizer = op.RecedingOptimizer(self.system, self.twin, DT=self.dt)
-        self.Qcost = np.diag([40, 40, 0.1, 0.1, 0.1, 0.1, 1, 1])
+        self.Qcost = np.diag([20, 20, 0.1, 0.1, 0.1, 0.1, 1, 1])
         self.Rcost = np.diag([0.1, 0.1])
 
 
@@ -322,6 +322,8 @@ class RecedingController:
             refargs['ry'] = rospy.get_param("~ry")
         if rospy.has_param("~power"):
             refargs['n'] = rospy.get_param("~power")
+        if rospy.has_param("~r0"):
+            refargs['r0'] = rospy.get_param("~r0")
         if rospy.has_param("~exponent"):
             tautmp = rospy.get_param("~exponent")
             if np.abs(tautmp) > 10e-6:

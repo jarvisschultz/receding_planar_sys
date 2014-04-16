@@ -20,9 +20,10 @@ class RefManager( object ):
     tau = inverse of the exponent of lead-in (0.0 or None => no lead in, higher
                 number => slower lead in)
     """
-    def __init__(self, rx=1.0/2.0, ry=0.25/2.0, n=2.5, tper=10.0, tau=None):
+    def __init__(self, rx=1.0/2.0, ry=0.25/2.0, n=2.5, tper=10.0, r0=1.0, tau=None):
         self.rx = rx
         self.ry = ry
+        self.r0 = r0
         self.n = n
         self.tper = tper
         if tau is not None:
@@ -47,7 +48,9 @@ class RefManager( object ):
             else:
                 th = 2*pi + pi/2
             qd[i, xmi] = np.abs(np.cos(th))**(2.0/self.n)*self.rx*np.sign(np.cos(th))
-            qd[i, ymi] = np.abs(np.sin(th))**(2.0/self.n)*self.ry*np.sign(np.sin(th)) - self.ry #subtract ry to ensure initial length is 1 meter
+            qd[i, ymi] = np.abs(np.sin(th))**(2.0/self.n)*self.ry*np.sign(np.sin(th))
+            # account for offset:
+            qd[i, ymi] += (sd.h0-self.r0) - self.ry
         # now let's calculate the inverse-kinematics based version of the kinematic
         # variables
         qk = np.zeros((len(tvec), dsys.system.nQk))
