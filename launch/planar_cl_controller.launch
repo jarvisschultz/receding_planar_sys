@@ -1,14 +1,20 @@
 <launch> 
   <!-- ARGUMENT DEFINITIONS -->
-  <arg name="file" default="default.mat" />
-  <arg name="dir" default="$(find robot_simulator)/data/" />
-  <arg name="vis" default="true" />
-  <arg name="index" value="1" />
-  <arg name="freq" default="10.0" />
-  <arg name="simfreq" default="30.0" />
-  <arg name="window" default="20" />
-  <arg name="tf" default="10.0" /> 
-  <arg name="noise" default="0.0" />
+  <arg name="vis" default="true" /> <!-- run rviz? -->
+  <arg name="index" value="1" /> <!-- robot XBee value -->
+  <arg name="freq" default="10.0" /> <!-- receding horizon freq -->
+  <arg name="window" default="20" /> <!-- number of timesteps to look ahead -->
+  <arg name="tf" default="10.0" /> <!-- final time -->
+  <arg name="noise" default="0.0" /> <!-- amount of noise to add -->
+  <arg name="simfreq" default="30.0" /> <!-- frequency of the simulator -->
+
+  <!-- REFERENCE TRAJECTORY PARAMETERS -->
+  <arg name="tper" default="10.0" /> <!-- time to traverse trajectory -->
+  <arg name="rx" default="0.5" /> <!-- half-width of superellipse -->
+  <arg name="ry" default="0.125" /> <!-- half-height of superellipse -->
+  <arg name="power" default="2.5" /> <!-- power of superellipse -->
+  <!-- inverse of exponential ramp time constant (0.0 means no ramp, higher numbers mean slower ramp -->
+  <arg name="exponent" default="0.0" /> 
   
   <!-- load serial node dictionary -->
   <rosparam file="$(find serial_node)/data/planar_cl_controller_serial_device_dict.xml" 
@@ -31,16 +37,16 @@
   <param name="time_final" value="$(arg tf)" type="double" />
   <param name="/simulator_noise" value="$(arg noise)" type="double" />
     
-  <!-- <!-\- slow kinect data to a lower frequency -\-> -->
-  <!-- <node pkg="topic_tools" type="throttle" name="kinect_throttler" -->
-  <!-- 	args="messages /camera/depth/points $(arg freq) -->
-  <!-- 	      /camera/depth/points_throttled"  -->
-  <!-- 	respawn="true"/> -->
-
   <!-- now I want to start up the controller/ filter, and the
        coordinator for the system -->
   <node pkg="receding_planar_sys" name="receding_controller"
-	type="receding_controller.py" output="screen" respawn="true" />
+	type="receding_controller.py" output="screen" respawn="true" >
+    <param name="tper" value="$(arg tper)" type="double"/>
+    <param name="rx" value="$(arg rx)" type="double"/>
+    <param name="ry" value="$(arg ry)" type="double"/>
+    <param name="power" value="$(arg power)" type="double"/>
+    <param name="exponent" value="$(arg exponent)" type="double"/>
+  </node>
   <node pkg="receding_planar_sys" name="coordinator"
 	type="receding_coordinator" output="screen" respawn="true" />
 
