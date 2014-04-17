@@ -52,6 +52,9 @@
       <param name="power" value="$(arg power)" type="double"/>
       <param name="exponent" value="$(arg exponent)" type="double"/>
       <param name="r0" value="$(arg r0)" type="double"/>
+      <!-- load relevant matrices -->
+      <rosparam command="load" 
+		file="$(find receding_planar_sys)/launch/noise_and_control_params.yaml" />
     </node>
   </group>
 

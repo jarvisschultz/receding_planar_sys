@@ -88,9 +88,18 @@ class RecedingController:
         
         # create optimizer and cost matrices
         self.optimizer = op.RecedingOptimizer(self.system, self.twin, DT=self.dt)
-        self.Qcost = np.diag([20, 20, 0.1, 0.1, 0.1, 0.1, 1, 1])
-        self.Rcost = np.diag([0.1, 0.1])
-
+        if rospy.has_param("~q_weight"):
+            Q = rospy.get_param("~q_weight")
+            if len(Q) is not self.dsys.nX:
+                rospy.logerr("q_weight parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.Qcost = np.diag(Q)
+        if rospy.has_param("~r_weight"):
+            R = rospy.get_param("~r_weight")
+            if len(R) is not self.dsys.nU:
+                rospy.logerr("r_weight parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.Rcost = np.diag(R)
 
         # get the initial config of the system:
         X,U = self.RM.calc_reference_traj(self.dsys, [0])
@@ -98,8 +107,18 @@ class RecedingController:
         self.Q0 = self.X0[0:self.system.nQ]
 
         # create EKF:
-        self.meas_cov = np.diag((0.5,0.5,0.5,0.5)) # measurement covariance
-        self.proc_cov = np.diag((0.1,0.1,0.1,0.1,0.15,0.15,0.15,0.15)) # process covariance
+        if rospy.has_param("~meas_cov"):
+            Q = rospy.get_param("~meas_cov")
+            if len(Q) is not self.system.nQ:
+                rospy.logerr("meas_cov parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.meas_cov = np.diag(Q)
+        if rospy.has_param("~proc_cov"):
+            Q = rospy.get_param("~proc_cov")
+            if len(Q) is not self.dsys.nX:
+                rospy.logerr("proc_cov parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.proc_cov = np.diag(Q)
         self.Hk = np.hstack((np.eye(self.system.nQ),
                              np.zeros((self.system.nQ, self.system.nQ))))
         self.ekf = ekf.VI_EKF('vi_ekf', self.X0, self.dt, self.proc_cov, self.meas_cov,
