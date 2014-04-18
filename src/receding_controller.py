@@ -297,7 +297,7 @@ class RecedingController:
                 rospy.logwarn("Received an error from optimizer!")
             # publish optimization summary:
             od = OptimizationData(**optdat)
-            od.index = self.call_count
+            od.index = self.callback_count
             od.time = ttmp[0]
             self.opt_pub.publish(od)
             # store data:
