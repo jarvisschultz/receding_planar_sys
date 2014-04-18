@@ -64,9 +64,9 @@ import tools
 
 # global constants:
 DT = 1/10. # timestep
-LEN =  20 # number of time steps to optimize over
-TPER = rm.TPER
+LEN = 20 # number of time steps to optimize over
 PATH_TIME = 6.0 # number of seconds to store paths
+TPER = 10.0 # time of ellipse traversal
 
 
 class RecedingController:
@@ -75,7 +75,8 @@ class RecedingController:
         rospy.loginfo("Creating RecedingController class...")
 
         # first let's get all necessary parameters:
-        self.get_and_set_params()
+        refargs = self.get_and_set_params()
+        self.RM = rm.RefManager(**refargs)
 
         # create time vectors, system, vi, and dsys
         self.system = sd.MassSystem2D()
@@ -87,18 +88,37 @@ class RecedingController:
         
         # create optimizer and cost matrices
         self.optimizer = op.RecedingOptimizer(self.system, self.twin, DT=self.dt)
-        self.Qcost = np.diag([20, 20, 0.1, 0.1, 0.1, 0.1, 1, 1])
-        self.Rcost = np.diag([0.1, 0.1])
-
+        if rospy.has_param("~q_weight"):
+            Q = rospy.get_param("~q_weight")
+            if len(Q) is not self.dsys.nX:
+                rospy.logerr("q_weight parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.Qcost = np.diag(Q)
+        if rospy.has_param("~r_weight"):
+            R = rospy.get_param("~r_weight")
+            if len(R) is not self.dsys.nU:
+                rospy.logerr("r_weight parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.Rcost = np.diag(R)
 
         # get the initial config of the system:
-        X,U = rm.calc_reference_traj(self.dsys, [0])
+        X,U = self.RM.calc_reference_traj(self.dsys, [0])
         self.X0 = X[0]
         self.Q0 = self.X0[0:self.system.nQ]
 
         # create EKF:
-        self.meas_cov = np.diag((0.5,0.5,0.5,0.5)) # measurement covariance
-        self.proc_cov = np.diag((0.1,0.1,0.1,0.1,0.15,0.15,0.15,0.15)) # process covariance
+        if rospy.has_param("~meas_cov"):
+            Q = rospy.get_param("~meas_cov")
+            if len(Q) is not self.system.nQ:
+                rospy.logerr("meas_cov parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.meas_cov = np.diag(Q)
+        if rospy.has_param("~proc_cov"):
+            Q = rospy.get_param("~proc_cov")
+            if len(Q) is not self.dsys.nX:
+                rospy.logerr("proc_cov parameter is wrong length!")
+                rospy.signal_shutdown()
+            self.proc_cov = np.diag(Q)
         self.Hk = np.hstack((np.eye(self.system.nQ),
                              np.zeros((self.system.nQ, self.system.nQ))))
         self.ekf = ekf.VI_EKF('vi_ekf', self.X0, self.dt, self.proc_cov, self.meas_cov,
@@ -109,7 +129,7 @@ class RecedingController:
         self.tbase = rospy.Time.now()
         self.callback_count = 0
         # self.Uprev = np.zeros(self.dsys.nU)
-        Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt])
+        Xtmp,Utmp = self.RM.calc_reference_traj(self.dsys, [0, self.dt])
         self.Ukey = Utmp[0]
         self.Uprev = Utmp[0]
         self.mass_ref_vec = deque([], maxlen=self.PATH_LENGTH)
@@ -168,7 +188,7 @@ class RecedingController:
             rospy.logerr("Requested time %f is outside of valid horizon", req.t)
             return None
         # get X,U at requested time
-        X,U = rm.calc_reference_traj(self.dsys, [req.t])
+        X,U = self.RM.calc_reference_traj(self.dsys, [req.t])
         # fill out message
         config = PlanarSystemConfig()
         config.xm = X[0,self.system.get_config('xm').index]
@@ -231,7 +251,7 @@ class RecedingController:
             self.ekf.xkk = self.ekf.X0
             self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
             # get reference traj after initial dt:
-            Xtmp,Utmp = rm.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
+            Xtmp,Utmp = self.RM.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
             # send reference traj U and store:
             self.convert_and_send_input(Xtmp[0][2:4], Xtmp[1][2:4])#self.Uprev, self.Ukey)
             self.Uprev = Utmp[0]
@@ -241,51 +261,28 @@ class RecedingController:
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)
+            # get updated estimate
+            self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
             # send old value to robot:
-            self.convert_and_send_input(self.Uprev, self.Ukey) # instead of Uprev, could this come from the estimate from the EKF?
-            try:
-                # get updated estimate
-                # self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
-                # publish filtered and reference:
-                # xref,uref = rm.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
-                # self.publish_state_and_config(data, self.ekf.xkk, xref[0])
-                # get prediction of where we will be in +dt seconds
-                # self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
-                # Xstart = self.dsyssim.f()
-                # get reference traj
-                ttmp = self.twin + (self.callback_count + 1)*self.dt
-                Xref, Uref = rm.calc_reference_traj(self.dsys, ttmp)
-                # get initial guess
-                # X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
-                # add path information:
-                # self.add_to_path_vectors(data, Xref[0], Xstart)
-                # optimize
-                # err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
-                #                                             Xref, Uref, X0, U0)
-                # if err: rospy.logwarn("Received an error from optimizer!")
-            except ValueError as e:
-                rospy.logerr("Threw ValueError exception in receding_controller's meascb:")
-                rospy.logerr("Error: {0}".format(e.message))
-                try:
-                    self.op_change_client(OperatingCondition(OperatingCondition.EMERGENCY))
-                except rospy.ServiceException, e:
-                    rospy.loginfo("Service did not process request: %s"%str(e))
-                self.stop_robots()
-            except sd.trep.ConvergenceError as e:
-                rospy.logerr("Threw ConvergenceError exception in receding_controller's meascb:")
-                rospy.logerr("Error: {0}".format(e.message))
-                try:
-                    self.op_change_client(OperatingCondition(OperatingCondition.EMERGENCY))
-                except rospy.ServiceException, e:
-                    rospy.loginfo("Service did not process request: %s"%str(e))
-                self.stop_robots()
-            except:
-                rospy.logerr("Unknown exception!")
-                try:
-                    self.op_change_client(OperatingCondition(OperatingCondition.EMERGENCY))
-                except rospy.ServiceException, e:
-                    rospy.loginfo("Service did not process request: %s"%str(e))
-                self.stop_robots()
+            self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
+            # publish filtered and reference:
+            xref,uref = self.RM.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+            self.publish_state_and_config(data, self.ekf.xkk, xref[0])
+            # get prediction of where we will be in +dt seconds
+            self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
+            Xstart = self.dsyssim.f()
+            # get reference traj
+            ttmp = self.twin + (self.callback_count + 1)*self.dt
+            Xref, Uref = self.RM.calc_reference_traj(self.dsys, ttmp)
+            # get initial guess
+            X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
+            # add path information:
+            self.add_to_path_vectors(data, Xref[0], Xstart)
+            # optimize
+            err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
+                                                        Xref, Uref, X0, U0)
+            if err:
+                rospy.logwarn("Received an error from optimizer!")
             # store data:
             self.Uprev = self.Ukey
             ## self.Ukey = U
@@ -338,7 +335,27 @@ class RecedingController:
         rospy.loginfo("Final Time: %d",self.tf)
         # set number of indices in path variables:
         self.PATH_LENGTH = int(PATH_TIME*1.0/self.dt)
-        return
+
+        # get args for the reference manager:
+        refargs = {}
+        if rospy.has_param("~tper"):
+            refargs['tper'] = rospy.get_param("~tper")
+        if rospy.has_param("~rx"):
+            refargs['rx'] = rospy.get_param("~rx")
+        if rospy.has_param("~ry"):
+            refargs['ry'] = rospy.get_param("~ry")
+        if rospy.has_param("~power"):
+            refargs['n'] = rospy.get_param("~power")
+        if rospy.has_param("~r0"):
+            refargs['r0'] = rospy.get_param("~r0")
+        if rospy.has_param("~exponent"):
+            tautmp = rospy.get_param("~exponent")
+            if np.abs(tautmp) > 10e-6:
+                refargs['tau'] = tautmp
+        rospy.loginfo("REFERENCE PARAMETERS:")
+        for key,val in refargs.iteritems():
+            rospy.loginfo("\t{0:s} \t: {1:f}".format(key,val))
+        return refargs
 
 
     def add_to_path_vectors(self, meas_data, ref_state, filt_state):

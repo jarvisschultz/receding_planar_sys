@@ -31,6 +31,7 @@
 //---------------------------------------------------------------------------
 #include <iostream>
 #include <math.h>
+#include <vector>
 
 #include <ros/ros.h>
 #include <ros/console.h>
@@ -48,17 +49,26 @@
 #include <tf/transform_datatypes.h>
 #include <tf_conversions/tf_eigen.h>
 #include <Eigen/Core>
+// local:
+#include "state_intp.hpp"
 
 
 //---------------------------------------------------------------------------
 // Global Variables
 //---------------------------------------------------------------------------
-#define NUM_CALIBRATES (30)
-#define NUM_EKF_INITS (3)
+#define NUM_CALIBRATES (60)
 #define ROBOT_CIRCUMFERENCE (57.5) // centimeters
+// hand-tuned offsets:
+#define ROBOT_XOFFSET (-0.005)
+#define ROBOT_YOFFSET (-0.030)
+#define ROBOT_ZOFFSET (0.039)
 #define DEFAULT_ROBOT_RADIUS (ROBOT_CIRCUMFERENCE/M_PI/2.0/100.) // meters
 #define DEFAULT_MASS_RADIUS (0.05285/2.0) // meters
 #define H0 (1.0) // default height of robot in meters
+#define NUMBER_CONFIGS (20) // max number of measured configs to store at a time
+#define NQ (4) // number of configs
+#define NX (3) // number of values we will be filtering
+#define DEFAULT_FREQ (30)
 
 //---------------------------------------------------------------------------
 // Objects and Functions
@@ -75,29 +85,54 @@ private:
     message_filters::Subscriber<PointPlus> robot_kinect_sub;
     message_filters::Subscriber<PointPlus> mass_kinect_sub;
     message_filters::TimeSynchronizer<PointPlus, PointPlus> * sync;
+    ros::Timer timer;
     double robot_radius;
     PlanarSystemConfig q0;
-    bool calibrated_flag;
+    bool calibrated_flag, publish_flag;
     unsigned int calibrate_count;
     Eigen::Vector3d robot_cal_pos, mass_cal_pos, cal_pos;
     Eigen::Vector3d robot_start_pos, mass_start_pos;
     tf::TransformListener tf;
     tf::TransformBroadcaster br;
     puppeteer_msgs::OperatingCondition op_con_msg;
-    
+    std::vector<double> tvec_mass, tvec_robot;
+    std::vector<state_type> mass_vec;
+    std::vector<state_type> robot_vec;
+    state_intp mass_int;
+    state_intp robot_int;
+    PointPlus mass_last, robot_last;
+    double dt;
+
 public:
-    PlanarCoordinator () {
+    PlanarCoordinator () :
+	mass_int(mass_vec, tvec_mass, NQ/2),
+	robot_int(robot_vec, tvec_robot, NQ/2)
+	{
 	ROS_DEBUG("Instantiating a PlanarCoordinator Class");
 	// define subscribers, synchronizer, and the corresponding
 	// callback:
-	robot_kinect_sub.subscribe(node_, "robot_kinect_position", 10);
-	mass_kinect_sub.subscribe(node_, "object1_position", 10);
+	robot_kinect_sub.subscribe(node_, "robot_kinect_position", 1);
+	mass_kinect_sub.subscribe(node_, "object1_position", 1);
 	sync = new message_filters::TimeSynchronizer<PointPlus, PointPlus>
 	    (robot_kinect_sub, mass_kinect_sub, 10);
 	sync->registerCallback(boost::bind(
 				   &PlanarCoordinator::callback, this, _1, _2));
 	// define publisher
-	config_pub = node_.advertise<PlanarSystemConfig> ("meas_config", 100);
+	config_pub = node_.advertise<PlanarSystemConfig> ("meas_config", 10);
+
+	// look for frequency param, and setup timer
+	if (ros::param::has("controller_freq"))
+	{
+	    ros::param::get("controller_freq", dt);
+	    dt = 1/dt;
+	}
+	else
+	{
+	    ROS_WARN("controller_freq not set for coordinator node");
+	    ros::param::set("controller_freq", DEFAULT_FREQ);
+	    dt = 1/DEFAULT_FREQ;
+	}
+	timer = node_.createTimer(ros::Duration(dt), &PlanarCoordinator::timercb, this);
 
 	// wait for service, and get the starting config:
 	ROS_INFO("Waiting for get_ref_config service:");
@@ -122,8 +157,8 @@ public:
 	// set all default variables:
 	calibrated_flag = false;
 	calibrate_count = 0;
-	
-	
+
+
 	return;
     }
 
@@ -131,6 +166,47 @@ public:
 	delete sync;
 	return;
     }
+
+
+    void timercb(const ros::TimerEvent& e)
+	{
+	    ROS_DEBUG("coordinator timercb");
+	    // return if we shouldn't do anything
+	    if (!publish_flag)
+		return;
+
+	    // first we need to request the interpolated values for both configs
+	    state_type mq(NX);
+	    state_type rq(NX);
+	    double t = e.current_expected.toSec();
+	    if (!mass_int(t, mq))
+	    	ROS_WARN("Mass time requested (%f) inside of range [%f, %f]",
+	    		 t, tvec_mass.front(), tvec_mass.back());
+	    if (!robot_int(t, rq))
+		ROS_WARN("Robot time requested (%f) inside of range [%f, %f]",
+	    		 t, tvec_robot.front(), tvec_robot.back());
+
+	    // convert vectors to Eigen:
+	    Eigen::Vector3d mqe(mq.data());
+	    Eigen::Vector3d rqe(rq.data());
+
+	    // now we can build a message and publish:
+	    PlanarSystemConfig qmeas;
+	    mqe(2) = 0; rqe(2) = 0; // project
+	    double rad = (mqe - rqe).norm(); // calc string len
+	    qmeas.xm = mqe(0);
+	    qmeas.ym = mqe(1);
+	    qmeas.xr = rqe(0);
+	    qmeas.r = rad;
+	    // qmeas.mass_err = m_pt.error;
+	    // qmeas.robot_err = r_pt.error;
+	    qmeas.header.stamp = e.current_expected;
+	    qmeas.header.frame_id = "optimization_frame";
+	    config_pub.publish(qmeas);
+
+	    return;
+	}
+
 
     void callback(const PointPlusConstPtr& robot_point, const PointPlusConstPtr& mass_point)
 	{
@@ -141,14 +217,40 @@ public:
 	    if (run_system_logic())
 	    	return;
 
+
 	    // let's first correct for the radii of the objects:
 	    r_pt = *robot_point;
 	    r_pt = correct_vals(r_pt, DEFAULT_ROBOT_RADIUS);
 	    m_pt = *mass_point;
 	    m_pt = correct_vals(m_pt, DEFAULT_MASS_RADIUS);
 
+	    // account for transform from robot centroid to string mount point:
+	    r_pt = robot_centroid_to_hook(r_pt);
+
+	    // error sorting:
+	    if (!r_pt.error)
+		// no error:
+		robot_last = r_pt;
+	    else {
+		// error:
+		r_pt.x = robot_last.x;
+		r_pt.y = robot_last.y;
+		r_pt.z = robot_last.z;
+	    }
+	    if (!m_pt.error)
+		// no error:
+		mass_last = m_pt;
+	    else {
+		// error:
+		m_pt.x = mass_last.x;
+		m_pt.y = mass_last.y;
+		m_pt.z = mass_last.z;
+	    }
+
+
 	    if (calibrated_flag == false)
 	    {
+		publish_flag = false;
 		if (calibrate_count == 0)
 		{
 		    calibrate_count++;
@@ -183,7 +285,7 @@ public:
 		    mass_cal_pos = (mass_cal_pos/((double) NUM_CALIBRATES));
 		    // now set start positions:
 		    mass_start_pos << q0.xm, q0.ym, 0;
-		    robot_start_pos << q0.xr, H0, 0;
+		    robot_start_pos << q0.xr, q0.ym + q0.r, 0; // must start at equilibrium
 		    // now get the transform:
 		    mass_cal_pos -= mass_start_pos;
 		    robot_cal_pos -= robot_start_pos;
@@ -192,15 +294,15 @@ public:
                     // ERROR CHECK	  //
                     ////////////////////////
 		    // if no error:
-		    // cal_pos = (mass_cal_pos + robot_cal_pos)/2.0;
-		    cal_pos = mass_cal_pos;
+		    cal_pos = (mass_cal_pos + robot_cal_pos)/2.0;
 
 		    // reset vars:
 		    calibrate_count = 0;
 		    calibrated_flag = true;
 		}
 	    }
-	    
+
+	    publish_flag = true;
 	    // send global frame transforms:
 	    send_global_transforms(m_pt.header.stamp);
 
@@ -208,33 +310,56 @@ public:
 	    // optimization_frame, build the output message, and
 	    // publish
 	    tf::Transform transform;
-	    PlanarSystemConfig qmeas;
 	    Eigen::Affine3d gwo;
 	    Eigen::Vector3d robot_trans, mass_trans;
-	    transform.setOrigin(tf::Vector3(cal_pos(0),
-					    cal_pos(1), cal_pos(2)));
 	    transform.setRotation(tf::Quaternion(0,0,0,1));
+
+            // transform robot:
+	    transform.setOrigin(tf::Vector3(robot_cal_pos(0),
+					    robot_cal_pos(1), robot_cal_pos(2)));
 	    tf::TransformTFToEigen(transform, gwo);
 	    gwo = gwo.inverse();
-	    // transform robot:
 	    robot_trans << r_pt.x, r_pt.y, r_pt.z;
 	    robot_trans = gwo*robot_trans;
 	    // transform mass:
+	    transform.setOrigin(tf::Vector3(mass_cal_pos(0),
+					    mass_cal_pos(1), mass_cal_pos(2)));
+	    tf::TransformTFToEigen(transform, gwo);
+	    gwo = gwo.inverse();
 	    mass_trans << m_pt.x, m_pt.y, m_pt.z;
 	    mass_trans = gwo*mass_trans;
-	    // calculate string length:
-	    mass_trans(2) = 0; robot_trans(2) = 0;
-	    double rad = (mass_trans - robot_trans).norm();
-	    qmeas.xm = mass_trans(0);
-	    qmeas.ym = mass_trans(1);
-	    qmeas.xr = robot_trans(0);
-	    qmeas.r = rad;
-	    qmeas.mass_err = m_pt.error;
-	    qmeas.robot_err = r_pt.error;
-	    qmeas.header.stamp = m_pt.header.stamp;
-	    qmeas.header.frame_id = "optimization_frame";
-	    config_pub.publish(qmeas);
-		    
+
+	    // send transforms:
+	    transform.setOrigin(tf::Vector3(robot_trans(0), robot_trans(1),
+					    robot_trans(2)));
+	    br.sendTransform(tf::StampedTransform(transform, m_pt.header.stamp,
+						  "optimization_frame",
+						  "robot_hook_meas"));
+	    transform.setOrigin(tf::Vector3(mass_trans(0), mass_trans(1),
+					    mass_trans(2)));
+	    br.sendTransform(tf::StampedTransform(transform, m_pt.header.stamp,
+						  "optimization_frame",
+						  "mass_centroid_meas"));
+
+	    // now we add the measured/transformed points into our interpolation
+	    // objects
+	    tvec_mass.push_back(ros::Time::now().toSec());
+	    tvec_robot.push_back(ros::Time::now().toSec());
+	    state_type xtmp(NX, 0);
+	    xtmp.assign((double*)mass_trans.data(), (double*)mass_trans.data() + NX);
+	    mass_vec.push_back(xtmp);
+	    xtmp.assign((double*)robot_trans.data(), (double*)robot_trans.data() + NX);
+	    robot_vec.push_back(xtmp);
+
+	    // pop off first entry if we have too many:
+	    if (tvec_mass.size() > NUMBER_CONFIGS)
+	    {
+		tvec_mass.erase(tvec_mass.begin());
+		tvec_robot.erase(tvec_robot.begin());
+		mass_vec.erase(mass_vec.begin());
+		robot_vec.erase(robot_vec.begin());
+	    }
+
 	    return;
 	}
 
@@ -254,61 +379,53 @@ public:
 		ROS_INFO("Setting operating_condition to IDLE");
 		ros::param::set("/operating_condition", 0);
 	    }
-	    
+
 	    bool quit_cb_flag = false;
 	    if (operating_condition < last_op_con)
 	    {
 		ROS_DEBUG("Need to calibrate due to state downgrade");
 		calibrated_flag = false;
+		publish_flag = false;
 		calibrate_count = 0;
 	    }
 	    if (calibrated_flag) // if we're calibrated, callback should always run
 	    {
-		ROS_DEBUG_THROTTLE(1, "CASE 1");
 		quit_cb_flag = false;
 	    }
 	    else if (operating_condition != op_con_msg.CALIBRATE)
 	    {
-		ROS_DEBUG_THROTTLE(1, "CASE 2");
 		quit_cb_flag = true;
+		publish_flag = false;
 	    }
 	    else
 	    {
-		ROS_DEBUG_THROTTLE(1, "CASE 3");
 		quit_cb_flag = false;
 	    }
 	    last_op_con = operating_condition;
 	    return quit_cb_flag;
-	    
-	    
-	    // if(operating_condition == 1 || operating_condition == 2)
-	    // {
-	    // 	return false;
-	    // }
-	    // // are we in idle or stop condition?
-	    // else if(operating_condition == 0 || operating_condition == 3)
-	    // 	ROS_DEBUG("Estimator node is idle due to operating condition");
-
-	    // // are we in emergency stop condition?
-	    // else if(operating_condition == 4)
-	    // 	ROS_WARN_ONCE("Emergency Stop Requested");
-
-	    // // otherwise something terrible has happened
-	    // else
-	    // 	ROS_ERROR("Invalid value for operating_condition");
-
-	    // calibrated_flag = false;
-	    // calibrate_count = 0;
-	    // return true;	    
 	}
-    
+
+
+    puppeteer_msgs::PointPlus robot_centroid_to_hook(const puppeteer_msgs::PointPlus &p)
+	{
+	    ROS_DEBUG("Centroid to hook correction called");
+	    puppeteer_msgs::PointPlus point = p;
+
+	    point.x += ROBOT_XOFFSET;
+	    point.y += ROBOT_YOFFSET;
+	    point.z += ROBOT_ZOFFSET;
+
+	    return(point);
+	}
+
+
     // this function accounts for the size of the robot:
-    puppeteer_msgs::PointPlus correct_vals(puppeteer_msgs::PointPlus &p, double radius)
+    puppeteer_msgs::PointPlus correct_vals(const puppeteer_msgs::PointPlus &p, const double radius)
 	{
 	    ROS_DEBUG("correct_vals called");
 	    puppeteer_msgs::PointPlus point;
 	    point = p;
-	    	    
+
 	    // let's create a unit vector from the kinect frame to the
 	    // robot's location
 	    Eigen::Vector3d ur;
@@ -317,12 +434,12 @@ public:
 	    ur = ur/ur.norm();
 	    // now we can correct the values of point
 	    ur = ur*radius;
-	    
+
 	    point.x = point.x+ur(0);
 	    point.y = point.y+ur(1);
 	    point.z = point.z+ur(2);
-	    
-	    return(point);	    	    
+
+	    return(point);
 	}
 
 
@@ -340,7 +457,6 @@ public:
 						  "oriented_optimization_frame",
 						  "optimization_frame"));
 
-	    
 	    // publish the map frame at same height as the Kinect
 	    transform.setOrigin(tf::Vector3(cal_pos(0),
 					    0,
@@ -349,7 +465,7 @@ public:
 	    br.sendTransform(tf::StampedTransform(transform, tstamp,
 						  "oriented_optimization_frame",
 						  "map"));
-	    
+
 	    // publish one more frame that is the frame the robot
 	    // calculates its odometry in.
 	    transform.setOrigin(tf::Vector3(0,0,0));
@@ -357,7 +473,7 @@ public:
 	    br.sendTransform(tf::StampedTransform(transform, tstamp,
 						  "map",
 						  "robot_odom_pov"));
-	    
+
 	    return;
 	}
 
