@@ -285,8 +285,7 @@ class RecedingController:
                 rospy.logwarn("Received an error from optimizer!")
             # store data:
             self.Uprev = self.Ukey
-            ## self.Ukey = U
-            self.Ukey = Uref[0]
+            self.Ukey = U[0]
             # check for the end of the trajectory:
             if self.callback_count >= len(self.tvec):
                 rospy.loginfo("Trajectory complete!")
