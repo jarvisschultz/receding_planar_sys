@@ -84,5 +84,11 @@ class RecedingOptimizer( object ):
         # except:
         #     rospy.logerr("Unknown error!")
         #     error = True
-        return error, X0, U0
+        optsum = {'cost': ncost,
+                  'dcost': dcost,
+                  'steps': step_count,
+                  'tolerance': optimizer.descent_tolerance,
+                  'error': error,
+                  'done': finished}
+        return optsum, X0, U0
 

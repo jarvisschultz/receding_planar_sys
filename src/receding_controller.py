@@ -20,16 +20,26 @@ PUBLISHERS:
     - filt_state (PlanarSystemState)
     - ref_state (PlanarSystemState)
     - start_time (Time)
+    - optimization_data (OptimizationData)
 
 SERVICES:
     - get_ref_config (PlanarSystemService) (provider)
     - operating_condition_change (OperatingConditionChange) (client)
 
 PARAMS:
-    - window_length ~ defines number of timesteps in an optimization
-    - controller_freq ~ defines the rate that everything is happening at
-    - time_final ~ defines the total time to run the controller
     - robot_index ~ which robot to communicate with
+    - controller_freq ~ defines the rate that everything is happening at
+    - window_length ~ defines number of timesteps in an optimization
+    - time_final ~ defines the total time to run the controller
+    - ~tper ~ how fast to run through reference traj
+    - ~rx ~ half-width of reference traj
+    - ~ry ~ half-height of reference traj
+    - ~power ~ power of superellipse
+    - ~r0 ~ inverse of exponential lead-in time constant
+    - ~q_weight ~ diagonal of Q in optimizations
+    - ~r_weight ~ diagonal of R in optimizations
+    - ~meas_cov ~ diagonal of measurement covariance
+    - ~proc_cov ~ diagonal of process covariance
 """
 
 # ROS imports:
@@ -42,6 +52,7 @@ from puppeteer_msgs.msg import RobotCommands
 from puppeteer_msgs.msg import PlanarCovariance
 from puppeteer_msgs.msg import PlanarSystemState
 from puppeteer_msgs.msg import OperatingCondition
+from puppeteer_msgs.msg import OptimizationData
 from puppeteer_msgs.srv import PlanarSystemService
 from puppeteer_msgs.srv import PlanarSystemServiceRequest
 from puppeteer_msgs.srv import OperatingConditionChange
@@ -165,6 +176,7 @@ class RecedingController:
         self.ref_path_pub = rospy.Publisher("mass_ref_path", Path)
         self.filt_path_pub = rospy.Publisher("mass_filt_path", Path)
         self.cov_pub = rospy.Publisher("post_covariance", PlanarCovariance)
+        self.opt_pub = rospy.Publisher("optimization_data", OptimizationData)
         # define timer callbacks:
         self.path_timer = rospy.Timer(rospy.Duration(0.1), self.path_timercb)
 
@@ -279,10 +291,15 @@ class RecedingController:
             # add path information:
             self.add_to_path_vectors(data, Xref[0], Xstart)
             # optimize
-            err,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
+            optdat,X,U =  self.optimizer.optimize_window(self.Qcost, self.Rcost,
                                                         Xref, Uref, X0, U0)
-            if err:
+            if optdat['error']:
                 rospy.logwarn("Received an error from optimizer!")
+            # publish optimization summary:
+            od = OptimizationData(**optdat)
+            od.index = self.call_count
+            od.time = ttmp[0]
+            self.opt_pub.publish(od)
             # store data:
             self.Uprev = self.Ukey
             self.Ukey = U[0]
