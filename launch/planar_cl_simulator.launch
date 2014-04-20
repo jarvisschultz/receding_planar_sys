@@ -7,6 +7,7 @@
   <arg name="tf" default="10.0" /> <!-- final time -->
   <arg name="noise" default="0.0" /> <!-- amount of noise to add -->
   <arg name="simfreq" default="10.0" /> <!-- frequency of the simulator -->
+  <arg name="cont" default="receding" /> <!-- what type of controller to use -->
 
   <!-- REFERENCE TRAJECTORY PARAMETERS -->
   <arg name="tper" default="10.0" /> <!-- time to traverse trajectory -->
@@ -31,6 +32,7 @@
     <param name="simulator_freq" value="$(arg freq)" type="double" />
     <param name="time_final" value="$(arg tf)" type="double" />
     <param name="/simulator_noise" value="$(arg noise)" type="double" />
+    <param name="controller_type" value="$(arg cont)" type="string"/>
 
     <include file="$(find robot_simulator)/launch/single_robot_simulator.launch" >
       <arg name="rn" value="$(arg rn)" />

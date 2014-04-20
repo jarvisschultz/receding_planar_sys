@@ -162,10 +162,18 @@ class RecedingController:
         except rospy.ServiceException, e:
             rospy.loginfo("Service did not process request: %s"%str(e))
         # define subscribers:
-        self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
-                                            self.meascb)
         self.op_cond_sub = rospy.Subscriber("/operating_condition",
                                             OperatingCondition, self.opcb)
+        if self.ctype == "openloop":
+            self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
+                                             self.openloopcb)
+        elif self.ctype == "receding":
+            self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
+                                             self.recedingcb)
+        else:
+            rospy.logwarn("Unrecognized controller type, falling back to receding")
+            
+
         # define publishers:
         self.time_pub = rospy.Publisher("start_time", Time)
         self.filt_pub = rospy.Publisher("filt_config", PlanarSystemConfig)
@@ -227,9 +235,8 @@ class RecedingController:
         return
 
     
-    def meascb(self, data):
-        rospy.logdebug("measurement callback triggered")
-
+    def recedingcb(self, data):
+        rospy.logdebug("receding control callback triggered")
         # op_cond = rospy.get_param("/operating_condition")
         op_cond = self.operating_condition
         if op_cond is OperatingCondition.CALIBRATE:
@@ -314,6 +321,82 @@ class RecedingController:
                 self.stop_robots()
         return
 
+
+
+    def openloopcb(self, data):
+        rospy.logdebug("openloop callback triggered")
+        op_cond = self.operating_condition
+        if op_cond is OperatingCondition.CALIBRATE:
+            self.send_initial_config()
+            # self.first_flag = False
+            return
+        elif op_cond is OperatingCondition.EMERGENCY:
+            # we need to stop robots!:
+            self.stop_robots()
+            return
+        elif op_cond is not OperatingCondition.RUN:
+            # we are not running, keep setting initializations
+            self.first_flag = True
+            self.callback_count = 0
+            self.ekf.index = 0
+            # clear trajectories:
+            self.mass_ref_vec.clear()
+            self.mass_filt_vec.clear()
+            return
+
+        if self.first_flag:
+            rospy.loginfo("Beginning Trajectory")
+            # publish start time:
+            self.time_pub.publish(data.header.stamp)
+            self.send_initial_config()
+            self.tbase = data.header.stamp
+            self.first_flag = False
+            self.callback_count = 0
+            # reset filter:
+            self.ekf.index = 0
+            self.ekf.xkk = self.ekf.X0
+            self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
+            # get reference traj after initial dt:
+            Xtmp,Utmp = self.RM.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
+            # send reference traj U and store:
+            self.convert_and_send_input(Xtmp[0][2:4], Xtmp[1][2:4])
+            self.Uprev = Utmp[0]
+            self.Ukey = Utmp[1]
+            # publish filtered and reference:
+            self.publish_state_and_config(data, self.ekf.xkk, self.X0)
+        else:
+            self.callback_count += 1
+            zk = tools.config_to_array(self.system, data)
+            # get updated estimate
+            self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # send old value to robot:
+            self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
+            # publish filtered and reference:
+            xref,uref = self.RM.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+            self.publish_state_and_config(data, self.ekf.xkk, xref[0])
+            # get prediction of where we will be in +dt seconds
+            self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
+            Xstart = self.dsyssim.f()
+            # get reference traj
+            ttmp = self.twin + (self.callback_count + 1)*self.dt
+            Xref, Uref = self.RM.calc_reference_traj(self.dsys, ttmp)
+            # get initial guess
+            X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
+            # add path information:
+            self.add_to_path_vectors(data, Xref[0], Xstart)
+            # store data:
+            self.Uprev = self.Ukey
+            self.Ukey = U0[0]
+            # check for the end of the trajectory:
+            if self.callback_count >= len(self.tvec):
+                rospy.loginfo("Trajectory complete!")
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.STOP))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
+                # now we can stop the robots
+                self.stop_robots()
+        return
     
     def get_and_set_params(self):
         # robot index:
@@ -351,6 +434,13 @@ class RecedingController:
         rospy.loginfo("Final Time: %d",self.tf)
         # set number of indices in path variables:
         self.PATH_LENGTH = int(PATH_TIME*1.0/self.dt)
+
+        # what type of controller are we running
+        if rospy.has_param("controller_type"):
+            self.ctype = rospy.get_param("controller_type")
+        else:
+            self.ctype = "receding"
+            rospy.set_param("controller_type", self.ctype)
 
         # get args for the reference manager:
         refargs = {}
