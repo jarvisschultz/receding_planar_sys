@@ -6,7 +6,7 @@
   <arg name="window" default="20" /> <!-- number of timesteps to look ahead -->
   <arg name="tf" default="10.0" /> <!-- final time -->
   <arg name="noise" default="0.0" /> <!-- amount of noise to add -->
-  <arg name="simfreq" default="30.0" /> <!-- frequency of the simulator -->
+  <arg name="simfreq" default="10.0" /> <!-- frequency of the simulator -->
 
   <!-- REFERENCE TRAJECTORY PARAMETERS -->
   <arg name="tper" default="10.0" /> <!-- time to traverse trajectory -->
@@ -28,7 +28,7 @@
     <param name="robot_index" value="$(arg index)" />
     <param name="window_length" value="$(arg window)" type="int" />
     <param name="controller_freq" value="$(arg freq)" type="double" />
-    <param name="simulator_freq" value="$(arg simfreq)" type="double" />
+    <param name="simulator_freq" value="$(arg freq)" type="double" />
     <param name="time_final" value="$(arg tf)" type="double" />
     <param name="/simulator_noise" value="$(arg noise)" type="double" />
 
