@@ -22,6 +22,35 @@ def calc_initial_guess(dsys, X0, Xref, Uref):
     return X,U
 
 
+def LQROptimizer(system, X0, DT, Q=None, R=None, tol=1e-6, steps=1000):
+    """
+    This class takes a system, an equilibrium state, a timestep, weighting
+    matrices, an error tolerance. It then solves a discrete-time LQR problem
+    to build a feedback regulator about the equilibrium point.
+    """
+    # first let's build an MVI and dsystem
+    mvi = trep.MidpointVI(system)
+    tvec = np.arange(0.0, steps*DT, DT)#np.array([0, DT])
+    dsys = discopt.DSystem(mvi, tvec)
+
+    # build reference trajectory:
+    Xd = np.array([X0]*len(tvec))
+    Ud = np.array([X0[system.nQd:system.nQ]]*(len(tvec)-1))
+
+    # build cost matrices:
+    if Q is None: Q = np.identity(dsys.nX)
+    if R is None: R = np.identity(dsys.nU)
+    Qk = lambda k: Q
+    Rk = lambda k: R
+
+    (Kstab, A, B) = dsys.calc_feedback_controller(Xd, Ud, Qk, Rk, return_linearization=True)
+    err = False
+    if np.linalg.norm(Kstab[0] - Kstab[1], ord=2) > tol:
+        rospy.logwarn("LQR stabilizing controller not settled!")
+        err = True
+    return err, Kstab[0]
+
+    
 class RecedingOptimizer( object ):
 
     def __init__(self, system, t, beta=0.7, tolerance=1e-1, DT=None):

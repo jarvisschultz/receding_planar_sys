@@ -165,11 +165,18 @@ class RecedingController:
         self.op_cond_sub = rospy.Subscriber("/operating_condition",
                                             OperatingCondition, self.opcb)
         if self.ctype == "openloop":
+            rospy.loginfo("Running an open-loop, IK controller")
             self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                              self.openloopcb)
         elif self.ctype == "receding":
+            rospy.loginfo("Running a receding horizon controller")
             self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                              self.recedingcb)
+        elif self.ctype == "lqr":
+            rospy.loginfo("Running an LQR controller")
+            self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
+                                             self.lqrcb)
+            self.setup_lqr_controller()
         else:
             rospy.logwarn("Unrecognized controller type, falling back to receding")
             
@@ -228,13 +235,28 @@ class RecedingController:
                 'time' : time,
                 }
 
+    def setup_lqr_controller(self):
+        steps = 500
+        err = True
+        count = 0
+        while err:
+            err, Kstab = op.LQROptimizer(self.system, self.X0, self.dt,
+                                         Q=self.Qcost, R=self.Rcost, steps=steps)
+            count += 1
+            steps *= 2
+            if count > 5:
+                rospy.logerr("Could not find LQR regulator!")
+                rospy.signal_shutdown()
+        self.Kstab = Kstab
+        return
+
 
     def opcb(self, data):
         # rospy.loginfo("Operating condition cb: %d"%data.state)
         self.operating_condition = data.state
         return
 
-    
+
     def recedingcb(self, data):
         rospy.logdebug("receding control callback triggered")
         # op_cond = rospy.get_param("/operating_condition")
@@ -321,6 +343,76 @@ class RecedingController:
                 self.stop_robots()
         return
 
+
+    def lqrcb(self, data):
+        rospy.logdebug("LQR control callback triggered")
+        op_cond = self.operating_condition
+        if op_cond is OperatingCondition.CALIBRATE:
+            self.send_initial_config()
+            # self.first_flag = False
+            return
+        elif op_cond is OperatingCondition.EMERGENCY:
+            # we need to stop robots!:
+            self.stop_robots()
+            return
+        elif op_cond is not OperatingCondition.RUN:
+            # we are not running, keep setting initializations
+            self.first_flag = True
+            self.callback_count = 0
+            self.ekf.index = 0
+            # clear trajectories:
+            self.mass_ref_vec.clear()
+            self.mass_filt_vec.clear()
+            return
+
+        if self.first_flag:
+            rospy.loginfo("Beginning Trajectory")
+            # publish start time:
+            self.time_pub.publish(data.header.stamp)
+            self.send_initial_config()
+            self.tbase = data.header.stamp
+            self.first_flag = False
+            self.callback_count = 0
+            # reset filter:
+            self.ekf.index = 0
+            self.ekf.xkk = self.ekf.X0
+            self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
+            # get reference traj after initial dt:
+            Xtmp,Utmp = self.RM.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
+            # send reference traj U and store:
+            self.convert_and_send_input(Xtmp[0][2:4], Xtmp[1][2:4])#self.Uprev, self.Ukey)
+            self.Uprev = Utmp[0]
+            self.Ukey = Utmp[1]
+            # publish filtered and reference:
+            self.publish_state_and_config(data, self.ekf.xkk, self.X0)
+        else:
+            self.callback_count += 1
+            zk = tools.config_to_array(self.system, data)
+            # get updated estimate
+            self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # get reference
+            xref,uref = self.RM.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+            # publish filtered and reference:
+            self.publish_state_and_config(data, self.ekf.xkk, xref[0])
+            # calculate controls:
+            self.Ukey = xref[0][2:4] + tools.matmult(self.Kstab, xref[0] - self.ekf.xkk)
+            # send controls to robot:
+            self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
+            # add path information:
+            self.add_to_path_vectors(data, xref[0], self.ekf.xkk)
+            # store data:
+            self.Uprev = self.Ukey
+            # check for the end of the trajectory:
+            if self.callback_count >= len(self.tvec):
+                rospy.loginfo("Trajectory complete!")
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.STOP))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
+                # now we can stop the robots
+                self.stop_robots()
+        return
+        
 
 
     def openloopcb(self, data):
