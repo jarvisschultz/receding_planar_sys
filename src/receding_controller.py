@@ -117,6 +117,9 @@ class RecedingController:
         self.X0 = X[0]
         self.Q0 = self.X0[0:self.system.nQ]
 
+        # get full reference:
+        self.Xref, self.Uref = self.RM.calc_reference_traj(self.dsys, self.tvec)
+        
         # create EKF:
         if rospy.has_param("~meas_cov"):
             Q = rospy.get_param("~meas_cov")
@@ -174,9 +177,14 @@ class RecedingController:
                                              self.recedingcb)
         elif self.ctype == "lqr":
             rospy.loginfo("Running an LQR controller")
+            self.setup_lqr_controller()
             self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                              self.lqrcb)
-            self.setup_lqr_controller()
+        elif self.ctype == "full":
+            rospy.loginfo("Running a full trajectory optimization")
+            self.setup_full_controller()
+            self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
+                                             self.fullcb)
         else:
             rospy.logwarn("Unrecognized controller type, falling back to receding")
             
@@ -235,6 +243,7 @@ class RecedingController:
                 'time' : time,
                 }
 
+
     def setup_lqr_controller(self):
         steps = 500
         err = True
@@ -248,6 +257,26 @@ class RecedingController:
                 rospy.logerr("Could not find LQR regulator!")
                 rospy.signal_shutdown()
         self.Kstab = Kstab
+        return
+
+
+    def setup_full_controller(self):
+        # create mvi and dsys:
+        mvi = sd.trep.MidpointVI(self.system)
+        dsys = op.discopt.DSystem(mvi, self.tvec)
+        # get reference and initial guess:
+        X0,U0 = op.calc_initial_guess(dsys, self.X0, self.Xref, self.Uref)
+        cost = op.discopt.DCost(self.Xref, self.Uref, self.Qcost, self.Rcost)
+        # build optimizer:
+        optimizer = op.discopt.DOptimizer(dsys, cost)
+        optimizer.optimize_ic = False
+        optimizer.descent_tolerance = 1e-6
+        optimizer.first_method_iterations = 2
+        # optimize:
+        finished, self.Xopt, self.Uopt = optimizer.optimize(X0, U0)
+        self.Kstab = dsys.calc_feedback_controller(self.Xopt, self.Uopt)
+        if not finished:
+            rospy.logwarn("Could not complete full optimization!")
         return
 
 
@@ -404,6 +433,79 @@ class RecedingController:
             self.Uprev = self.Ukey
             # check for the end of the trajectory:
             if self.callback_count >= len(self.tvec):
+                rospy.loginfo("Trajectory complete!")
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.STOP))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
+                # now we can stop the robots
+                self.stop_robots()
+        return
+
+
+
+    def fullcb(self, data):
+        rospy.logdebug("Full controller callback triggered")
+        op_cond = self.operating_condition
+        if op_cond is OperatingCondition.CALIBRATE:
+            self.send_initial_config()
+            # self.first_flag = False
+            return
+        elif op_cond is OperatingCondition.EMERGENCY:
+            # we need to stop robots!:
+            self.stop_robots()
+            return
+        elif op_cond is not OperatingCondition.RUN:
+            # we are not running, keep setting initializations
+            self.first_flag = True
+            self.callback_count = 0
+            self.ekf.index = 0
+            # clear trajectories:
+            self.mass_ref_vec.clear()
+            self.mass_filt_vec.clear()
+            return
+
+        if self.first_flag:
+            rospy.loginfo("Beginning Trajectory")
+            # publish start time:
+            self.time_pub.publish(data.header.stamp)
+            self.send_initial_config()
+            self.tbase = data.header.stamp
+            self.first_flag = False
+            self.callback_count = 0
+            # reset filter:
+            self.ekf.index = 0
+            self.ekf.xkk = self.ekf.X0
+            self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
+            # send reference traj U and store:
+            self.convert_and_send_input(self.Xopt[0][2:4], self.Uopt[0])
+            self.Uprev = self.Uopt[0]
+            self.Ukey = self.Uopt[1]
+            # publish filtered and reference:
+            self.publish_state_and_config(data, self.ekf.xkk, self.X0)
+        else:
+            self.callback_count += 1
+            zk = tools.config_to_array(self.system, data)
+            # get updated estimate
+            self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # set index value:
+            if self.callback_count > len(self.Uopt)-1:
+                index = len(self.Uopt)-1
+            else:
+                index = self.callback_count
+            # publish filtered and reference:
+            self.publish_state_and_config(data, self.ekf.xkk, self.Xref[index])
+            # calculate controls:
+            self.Ukey = self.Uopt[index] + \
+                        tools.matmult(self.Kstab[index], self.Xref[index] - self.ekf.xkk)
+            # send controls to robot:
+            self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
+            # add path information:
+            self.add_to_path_vectors(data, self.Xref[index], self.ekf.xkk)
+            # store data:
+            self.Uprev = self.Ukey
+            # check for the end of the trajectory:
+            if self.callback_count > len(self.tvec) - 1:
                 rospy.loginfo("Trajectory complete!")
                 try:
                     self.op_change_client(OperatingCondition(OperatingCondition.STOP))
