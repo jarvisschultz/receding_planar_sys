@@ -274,7 +274,9 @@ class RecedingController:
         optimizer.first_method_iterations = 2
         # optimize:
         finished, self.Xopt, self.Uopt = optimizer.optimize(X0, U0)
-        self.Kstab = dsys.calc_feedback_controller(self.Xopt, self.Uopt)
+        Qk = lambda k: self.Qcost
+        Rk = lambda k: self.Rcost
+        self.Kstab = dsys.calc_feedback_controller(self.Xopt, self.Uopt, Qk, Rk)
         if not finished:
             rospy.logwarn("Could not complete full optimization!")
         return
@@ -478,15 +480,14 @@ class RecedingController:
             self.ekf.xkk = self.ekf.X0
             self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
             # send reference traj U and store:
-            self.convert_and_send_input(self.Xopt[0][2:4], self.Uopt[0])
-            self.Uprev = self.Uopt[0]
-            self.Ukey = self.Uopt[1]
+            self.Uprev = self.X0[2:4]
+            self.Ukey = self.Uopt[0]
             # publish filtered and reference:
             self.publish_state_and_config(data, self.ekf.xkk, self.X0)
         else:
             self.callback_count += 1
             zk = tools.config_to_array(self.system, data)
-            # get updated estimate
+            # get updated estimates
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
             # set index value:
             if self.callback_count > len(self.Uopt)-1:
@@ -497,7 +498,7 @@ class RecedingController:
             self.publish_state_and_config(data, self.ekf.xkk, self.Xref[index])
             # calculate controls:
             self.Ukey = self.Uopt[index] + \
-                        tools.matmult(self.Kstab[index], self.Xref[index] - self.ekf.xkk)
+                        tools.matmult(self.Kstab[index], self.Xopt[index] - self.ekf.xkk)
             # send controls to robot:
             self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
             # add path information:
@@ -505,7 +506,7 @@ class RecedingController:
             # store data:
             self.Uprev = self.Ukey
             # check for the end of the trajectory:
-            if self.callback_count > len(self.tvec) - 1:
+            if self.callback_count > len(self.tvec)-1:
                 rospy.loginfo("Trajectory complete!")
                 try:
                     self.op_change_client(OperatingCondition(OperatingCondition.STOP))
