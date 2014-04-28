@@ -799,10 +799,10 @@ class RecedingController:
         com.header.stamp = rospy.get_rostime()
         com.header.frame_id = "/optimization_frame"
         com.div = 4
-        com.x = self.Q0[self.system.get_config('xr').index] + 0.75 
+        com.x = self.Q0[self.system.get_config('xr').index]
         com.y = 0
         com.th = 0
-        com.height_left = self.Q0[self.system.get_config('r').index] - 0.25
+        com.height_left = self.Q0[self.system.get_config('r').index]
         com.height_right = 1
         self.comm_pub.publish(com)
         return
