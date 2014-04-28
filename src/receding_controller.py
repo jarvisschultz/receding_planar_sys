@@ -185,6 +185,11 @@ class RecedingController:
             self.setup_full_controller()
             self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                              self.fullcb)
+        elif self.ctype == "feedforward":
+            rospy.loginfo("Running a feedforward only optimization")
+            self.setup_full_controller()
+            self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
+                                             self.feedforwardcb)
         else:
             rospy.logwarn("Unrecognized controller type, falling back to receding")
             
@@ -515,7 +520,77 @@ class RecedingController:
                 # now we can stop the robots
                 self.stop_robots()
         return
-        
+
+
+    def feedforwardcb(self, data):
+        rospy.logdebug("Feedforward controller callback triggered")
+        op_cond = self.operating_condition
+        if op_cond is OperatingCondition.CALIBRATE:
+            self.send_initial_config()
+            # self.first_flag = False
+            return
+        elif op_cond is OperatingCondition.EMERGENCY:
+            # we need to stop robots!:
+            self.stop_robots()
+            return
+        elif op_cond is not OperatingCondition.RUN:
+            # we are not running, keep setting initializations
+            self.first_flag = True
+            self.callback_count = 0
+            self.ekf.index = 0
+            # clear trajectories:
+            self.mass_ref_vec.clear()
+            self.mass_filt_vec.clear()
+            return
+
+        if self.first_flag:
+            rospy.loginfo("Beginning Trajectory")
+            # publish start time:
+            self.time_pub.publish(data.header.stamp)
+            self.send_initial_config()
+            self.tbase = data.header.stamp
+            self.first_flag = False
+            self.callback_count = 0
+            # reset filter:
+            self.ekf.index = 0
+            self.ekf.xkk = self.ekf.X0
+            self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
+            # send reference traj U and store:
+            self.Uprev = self.X0[2:4]
+            self.Ukey = self.Uopt[0]
+            # publish filtered and reference:
+            self.publish_state_and_config(data, self.ekf.xkk, self.X0)
+        else:
+            self.callback_count += 1
+            zk = tools.config_to_array(self.system, data)
+            # get updated estimates
+            self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
+            # set index value:
+            if self.callback_count > len(self.Uopt)-1:
+                index = len(self.Uopt)-1
+            else:
+                index = self.callback_count
+            # publish filtered and reference:
+            self.publish_state_and_config(data, self.ekf.xkk, self.Xref[index])
+            # calculate controls:
+            self.Ukey = self.Uopt[index]
+            # send controls to robot:
+            self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
+            # add path information:
+            self.add_to_path_vectors(data, self.Xref[index], self.ekf.xkk)
+            # store data:
+            self.Uprev = self.Ukey
+            # check for the end of the trajectory:
+            if self.callback_count > len(self.tvec)-1:
+                rospy.loginfo("Trajectory complete!")
+                try:
+                    self.op_change_client(OperatingCondition(OperatingCondition.STOP))
+                except rospy.ServiceException, e:
+                    rospy.loginfo("Service did not process request: %s"%str(e))
+                # now we can stop the robots
+                self.stop_robots()
+        return
+
 
 
     def openloopcb(self, data):
@@ -724,10 +799,10 @@ class RecedingController:
         com.header.stamp = rospy.get_rostime()
         com.header.frame_id = "/optimization_frame"
         com.div = 4
-        com.x = self.Q0[self.system.get_config('xr').index]
+        com.x = self.Q0[self.system.get_config('xr').index] + 0.75 
         com.y = 0
         com.th = 0
-        com.height_left = self.Q0[self.system.get_config('r').index]
+        com.height_left = self.Q0[self.system.get_config('r').index] - 0.25
         com.height_right = 1
         self.comm_pub.publish(com)
         return
