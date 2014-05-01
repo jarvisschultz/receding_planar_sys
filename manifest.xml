@@ -24,4 +24,6 @@
   <depend package="image_transport" />
   <depend package="opencv2" />
   <depend package="camera_calibration_parsers" />
+  <depend package="std_srvs" />
+  <depend package="interactive_markers" />
 </package>
