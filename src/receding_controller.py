@@ -137,7 +137,7 @@ class RecedingController:
                              np.zeros((self.system.nQ, self.system.nQ))))
         self.ekf = ekf.VI_EKF('vi_ekf', self.X0, self.dt, self.proc_cov, self.meas_cov,
                               Hk=self.Hk, sys=self.system, L=len(self.tvec))
- 
+
         # define some vars that we are going to need
         self.first_flag = True
         self.tbase = rospy.Time.now()

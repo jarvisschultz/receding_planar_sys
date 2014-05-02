@@ -15,12 +15,13 @@ SUBSCRIPTIONS:
 PUBLISHERS:
     - mass_ref_point (PointStamped)
     - mass_ref_frame (tf) ... not really a topic
-
+    - visualization_markers (VisualizationMarkerArray)
 """
 import roslib; roslib.load_manifest("receding_planar_sys")
 import rospy
 import copy
 from interactive_markers.interactive_marker_server import *
+import visualization_msgs.msg as VM
 from geometry_msgs.msg import PoseStamped as PS
 import std_srvs.srv as SS
 from geometry_msgs.msg import Pose as P
@@ -95,7 +96,7 @@ class SingleController:
         self.int_marker.name = simframe
         self.int_marker.description = "set mass reference"
 
-        makeMarkerControl(self.int_marker, color)
+        self.marker = makeMarkerControl(self.int_marker, color)
 
         self.control = InteractiveMarkerControl()
         self.control.orientation.w = 1
@@ -104,6 +105,7 @@ class SingleController:
         self.control.orientation.z = 0
         self.control.interaction_mode = InteractiveMarkerControl.MOVE_PLANE
         self.int_marker.controls.append(self.control)
+
 
     def set_pose(self, pose=None, pos=[0.0,]*3, quat=[0.0,]*4):
         if pose != None:
@@ -123,16 +125,6 @@ class SingleController:
             self.simpose = P(position=Point(*pos),
                                      orientation=Quaternion(*quat))
 
-    # def deactivate_controls(self):
-    #     try:
-    #         self.int_marker.controls.pop()
-    #     except IndexError:
-    #         pass
-
-    # def activate_controls(self):
-    #     if len(self.int_marker.controls) < 1:
-    #         self.int_marker.controls.append(self.control)
-
 
 class MarkerControls:
     def __init__(self):
@@ -148,18 +140,14 @@ class MarkerControls:
                                                  MARKERWF,
                                                  color='green'))
 
-        # now let's insert a callback for the controller:
-        # for con in self.controllers:
-        #     self.server.insert(con.int_marker, self.marker_cb)
-        # # actually update server for all inserted controls
-        # self.server.applyChanges()
-
         # create subscriber for operating condition
         self.op_cond_sub = rospy.Subscriber("/operating_condition",
                                             OperatingCondition, self.opcb)
         self.operating_condition = OperatingCondition.IDLE
         # create publisher
         self.marker_pub = rospy.Publisher("mass_ref_point", PointStamped)
+        # publish markers for drawing paths
+        self.con_pub = rospy.Publisher("visualization_markers", VM.MarkerArray)
         # setup timer to publish transforms and messages:
         rospy.Timer(rospy.Duration(DT), self.timercb)
         return
@@ -174,18 +162,15 @@ class MarkerControls:
                 self.server.setPose(con.int_marker.name, con.simpose)
             self.server.applyChanges()
         self.operating_condition = data.state
-        if self.operating_condition >= OperatingCondition.RUN:
+        if self.operating_condition == OperatingCondition.RUN:
             for con in self.controllers:
                 self.server.insert(con.int_marker, self.marker_cb)
-                # con.activate_controls()
+            self.server.applyChanges()
         elif self.operating_condition == OperatingCondition.IDLE:
             rospy.loginfo("Removing interactive marker from server")
             for con in self.controllers:
                 self.server.erase(con.int_marker.name)
-            # self.server.clear()
-            # for con in self.controllers:
-            #     con.deactivate_controls()
-        self.server.applyChanges()
+            self.server.applyChanges()
         return
 
 
@@ -201,6 +186,7 @@ class MarkerControls:
 
     def send_transforms(self):
         tnow = rospy.Time.now()
+        mlist = []
         for con in self.controllers:
             pos = con.int_marker.pose.position
             quat = con.int_marker.pose.orientation
@@ -215,6 +201,10 @@ class MarkerControls:
             pt.point.y = pos.y
             pt.point.z = pos.z
             self.marker_pub.publish(pt)
+            mlist.append(con.marker)
+        ma = VM.MarkerArray()
+        ma.markers = mlist
+        self.marker_pub.publish(ma)
         return
 
 
