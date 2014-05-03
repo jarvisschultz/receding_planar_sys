@@ -96,7 +96,11 @@ class SingleController:
         self.int_marker.name = simframe
         self.int_marker.description = "set mass reference"
 
-        self.marker = makeMarkerControl(self.int_marker, color)
+        # self.marker = makeMarker(self.int_marker, color)
+        # self.marker.id = hash(conframe+simframe)%(2**16)
+        # self.marker.header.frame_id = MARKERWF
+
+        makeMarkerControl(self.int_marker, color)
 
         self.control = InteractiveMarkerControl()
         self.control.orientation.w = 1
@@ -201,10 +205,13 @@ class MarkerControls:
             pt.point.y = pos.y
             pt.point.z = pos.z
             self.marker_pub.publish(pt)
-            mlist.append(con.marker)
+            m = con.int_marker.controls[0].markers[0]
+            m.header = con.int_marker.header
+            m.pose = con.int_marker.pose
+            mlist.append(m)
         ma = VM.MarkerArray()
         ma.markers = mlist
-        self.marker_pub.publish(ma)
+        self.con_pub.publish(ma)
         return
 
 

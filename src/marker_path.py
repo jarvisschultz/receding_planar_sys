@@ -7,6 +7,7 @@ import rospy
 import tf
 import geometry_msgs.msg as GM
 import visualization_msgs.msg as VM
+from puppeteer_msgs.msg import OperatingCondition
 
 FREQ_DIV = 3
 NUMBER_MESSAGES = 200/float(FREQ_DIV)
@@ -31,7 +32,11 @@ class Path:
         if len(self.point_list) > self.max_size:
             self.point_list.pop(0)
         self.marker.points = self.point_list
-        
+
+
+    def clear_path(self):
+        self.point_list = []
+        self.marker.points = self.point_list
 
 
 class MarkerPaths:
@@ -39,6 +44,9 @@ class MarkerPaths:
         # subscriber for markers
         self.mark_sub = rospy.Subscriber("visualization_markers", VM.MarkerArray,
                                          self.markcb)
+        self.op_cond_sub = rospy.Subscriber("/operating_condition",
+                                            OperatingCondition, self.opcb)
+        self.operating_condition = OperatingCondition.IDLE
         # publisher for the paths of the markers
         self.path_pub = rospy.Publisher("marker_paths", VM.MarkerArray)
         self.paths = {}
@@ -58,6 +66,16 @@ class MarkerPaths:
             ma.markers = [a.marker for a in self.paths.values()]
             self.path_pub.publish(ma)
         return
+
+
+    def opcb(self, data):
+        if data.state < self.operating_condition:
+            rospy.loginfo("Resetting marker_paths")
+            # clear all paths:
+            for p in self.paths.itervalues():
+                p.clear_path()
+        self.operating_condition = data.state
+
 
 def main():
     rospy.init_node('marker_path_pub')
