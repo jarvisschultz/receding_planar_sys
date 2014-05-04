@@ -117,9 +117,6 @@ class RecedingController:
         self.X0 = X[0]
         self.Q0 = self.X0[0:self.system.nQ]
 
-        # get full reference:
-        self.Xref, self.Uref = self.RM.calc_reference_traj(self.dsys, self.tvec)
-        
         # create EKF:
         if rospy.has_param("~meas_cov"):
             Q = rospy.get_param("~meas_cov")
@@ -140,12 +137,13 @@ class RecedingController:
 
         # define some vars that we are going to need
         self.first_flag = True
+        self.wait_flag = True
         self.tbase = rospy.Time.now()
         self.callback_count = 0
         # self.Uprev = np.zeros(self.dsys.nU)
-        Xtmp,Utmp = self.RM.calc_reference_traj(self.dsys, [0, self.dt])
-        self.Ukey = Utmp[0]
-        self.Uprev = Utmp[0]
+        # Xtmp,Utmp = self.RM.calc_reference_traj(self.dsys, [0, self.dt])
+        self.Ukey = self.X0[2:4]
+        self.Uprev = self.X0[2:4]
         self.mass_ref_vec = deque([], maxlen=self.PATH_LENGTH)
         self.mass_filt_vec = deque([], maxlen=self.PATH_LENGTH)
 
@@ -182,20 +180,24 @@ class RecedingController:
                                              self.lqrcb)
         elif self.ctype == "full":
             rospy.loginfo("Running a full trajectory optimization")
+            # get full reference:
+            self.Xref, self.Uref = self.RM.calc_reference_traj(self.dsys, self.tvec)
             self.setup_full_controller()
             self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                              self.fullcb)
         elif self.ctype == "feedforward":
             rospy.loginfo("Running a feedforward only optimization")
+            self.Xref, self.Uref = self.RM.calc_reference_traj(self.dsys, self.tvec)
             self.setup_full_controller()
             self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                              self.feedforwardcb)
         else:
             rospy.logwarn("Unrecognized controller type, falling back to receding")
-            
+            self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
+                                             self.recedingcb)
 
         # define publishers:
-        self.time_pub = rospy.Publisher("start_time", Time)
+        self.time_pub = rospy.Publisher("start_time", Time, latch=True)
         self.filt_pub = rospy.Publisher("filt_config", PlanarSystemConfig)
         self.filt_state_pub = rospy.Publisher("filt_state", PlanarSystemState)
         self.ref_pub = rospy.Publisher("ref_config", PlanarSystemConfig)
@@ -228,7 +230,12 @@ class RecedingController:
             rospy.logerr("Requested time %f is outside of valid horizon", req.t)
             return None
         # get X,U at requested time
-        X,U = self.RM.calc_reference_traj(self.dsys, [req.t])
+        r = self.RM.calc_reference_traj(self.dsys, [req.t])
+        if r:
+            X,U = r
+        else:
+            rospy.logerr("calc_reference_traj returned None!")
+            return None
         # fill out message
         config = PlanarSystemConfig()
         config.xm = X[0,self.system.get_config('xm').index]
@@ -299,7 +306,6 @@ class RecedingController:
         op_cond = self.operating_condition
         if op_cond is OperatingCondition.CALIBRATE:
             self.send_initial_config()
-            # self.first_flag = False
             return
         elif op_cond is OperatingCondition.EMERGENCY:
             # we need to stop robots!:
@@ -308,6 +314,7 @@ class RecedingController:
         elif op_cond is not OperatingCondition.RUN:
             # we are not running, keep setting initializations
             self.first_flag = True
+            self.wait_flag = True
             self.callback_count = 0
             self.ekf.index = 0
             # clear trajectories:
@@ -316,11 +323,19 @@ class RecedingController:
             return
 
         if self.first_flag:
+            # let's enforce a few delays here to ensure that we build up enough
+            # reference traj:
+            if self.interactive_bool and self.wait_flag:
+                if self.callback_count == 0:
+                    # publish start time:
+                    self.time_pub.publish(data.header.stamp)
+                    self.send_initial_config()
+                    self.tbase = data.header.stamp
+                elif self.callback_count > 10:
+                    self.wait_flag = False
+                self.callback_count += 1
+                return
             rospy.loginfo("Beginning Trajectory")
-            # publish start time:
-            self.time_pub.publish(data.header.stamp)
-            self.send_initial_config()
-            self.tbase = data.header.stamp
             self.first_flag = False
             self.callback_count = 0
             # reset filter:
@@ -328,7 +343,13 @@ class RecedingController:
             self.ekf.xkk = self.ekf.X0
             self.ekf.est_cov = copy.deepcopy(self.ekf.proc_cov)
             # get reference traj after initial dt:
-            Xtmp,Utmp = self.RM.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
+            r = self.RM.calc_reference_traj(self.dsys, [0, self.dt, 2*self.dt])
+            if r:
+                Xtmp,Utmp = r
+            else:
+                rospy.logwarn("waiting for more reference in first_flag of recedingcb")
+                self.first_flag = True
+                return
             # send reference traj U and store:
             self.convert_and_send_input(Xtmp[0][2:4], Xtmp[1][2:4])#self.Uprev, self.Ukey)
             self.Uprev = Utmp[0]
@@ -343,14 +364,28 @@ class RecedingController:
             # send old value to robot:
             self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
             # publish filtered and reference:
-            xref,uref = self.RM.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+            r = self.RM.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+            # print "current t = ",self.callback_count*self.dt
+            # print "max t = ",self.RM.tvec[-1]
+            if r:
+                xref,uref = r
+            else:
+                rospy.logwarn("reference trajectory returned None for window initial condition!")
+                return
             self.publish_state_and_config(data, self.ekf.xkk, xref[0])
             # get prediction of where we will be in +dt seconds
             self.dsyssim.set(self.ekf.xkk, self.Ukey, 0)
             Xstart = self.dsyssim.f()
             # get reference traj
             ttmp = self.twin + (self.callback_count + 1)*self.dt
-            Xref, Uref = self.RM.calc_reference_traj(self.dsys, ttmp)
+            r = self.RM.calc_reference_traj(self.dsys, ttmp)
+            print "ttmp[0] = ",ttmp[0], "ttmp[-1] = ",ttmp[-1]
+            print "min t = ",self.RM.tvec[0],"max t = ",self.RM.tvec[-1]
+            if r:
+                Xref, Uref = r
+            else:
+                rospy.logwarn("reference trajectory returned None for window trajectory !")
+                return
             # get initial guess
             X0, U0 = op.calc_initial_guess(self.dsys, Xstart, Xref, Uref)
             # add path information:
@@ -728,6 +763,11 @@ class RecedingController:
             tautmp = rospy.get_param("~exponent")
             if np.abs(tautmp) > 10e-6:
                 refargs['tau'] = tautmp
+        if rospy.has_param("~interactive"):
+            refargs['interactive'] = rospy.get_param("~interactive")
+            self.interactive_bool = True
+        else:
+            self.interactive_bool = False
         rospy.loginfo("REFERENCE PARAMETERS:")
         for key,val in refargs.iteritems():
             rospy.loginfo("\t{0:s} \t: {1:f}".format(key,val))

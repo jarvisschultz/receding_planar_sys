@@ -8,6 +8,7 @@
   <arg name="noise" default="0.0" /> <!-- amount of noise to add -->
   <arg name="simfreq" default="10.0" /> <!-- frequency of the simulator -->
   <arg name="cont" default="receding" /> <!-- what type of controller to use -->
+  <arg name="interactive" default="true" /> <!-- if true, we use an interactive ref generator -->
 
   <!-- REFERENCE TRAJECTORY PARAMETERS -->
   <arg name="tper" default="10.0" /> <!-- time to traverse trajectory -->
@@ -54,6 +55,7 @@
       <param name="power" value="$(arg power)" type="double"/>
       <param name="exponent" value="$(arg exponent)" type="double"/>
       <param name="r0" value="$(arg r0)" type="double"/>
+      <param name="interactive" value="$(arg interactive)" type="bool" />
       <!-- load relevant matrices -->
       <rosparam command="load" 
 		file="$(find receding_planar_sys)/launch/noise_and_control_params.yaml" />
