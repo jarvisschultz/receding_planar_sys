@@ -49,8 +49,8 @@ class RefManager( object ):
             self.mass_ref_sub = rospy.Subscriber("mass_ref_point", PointStamped, self.pointcb)
             self.mutex = threading.Lock()
             self.X0 = np.hstack(([0,0,0,1], np.zeros(4,)))
-            self.tvec = np.array([-0.1, 0.0])
-            self.xvec = np.array([self.X0, self.X0])
+            self._tvec = np.array([-0.1, 0.0])
+            self._xvec = np.array([self.X0, self.X0])
             self.update_interp()
             self.calc_reference_traj = self.interactive_reference_traj
         else:
@@ -75,7 +75,7 @@ class RefManager( object ):
             return self._fint(t)
         
     def update_interp(self):
-        self._fint = interp1d(self.tvec, self.xvec, copy=True, kind='linear', axis=0)
+        self._fint = interp1d(self._tvec, self._xvec, copy=True, kind='linear', axis=0)
         
     def reset_time(self):
         self.tstart = -1
@@ -85,7 +85,7 @@ class RefManager( object ):
 
     def pointcb(self, point):
         # convert the time and add to time vector
-        self.tvec = np.append(self.tvec, point.header.stamp.to_sec() - self.tstart)
+        self._tvec = np.append(self._tvec, point.header.stamp.to_sec() - self.tstart)
         # get dynamic ref configuration in the plane:
         qd = np.array([point.point.x, point.point.y])
         # now fill in inverse-kinematic configuration variables:
@@ -93,11 +93,11 @@ class RefManager( object ):
         Q = np.hstack((qd,qk))
         # now fill in velocity and momentum:
         X = np.hstack((Q, np.zeros(len(Q),)))
-        self.xvec = np.append(self.xvec, [X], axis=0)
+        self._xvec = np.append(self._xvec, [X], axis=0)
         # now trim vectors if necessary:
-        if len(self.tvec) > MAX_POINTS:
-            self.tvec = np.delete(self.tvec, 0)
-            self.xvec = np.delete(self.xvec, 0, axis=0)
+        if len(self._tvec) > MAX_POINTS:
+            self._tvec = np.delete(self._tvec, 0)
+            self._xvec = np.delete(self._xvec, 0, axis=0)
         # now with a lock, let's update the interp:
         with self.mutex:
             self.update_interp()

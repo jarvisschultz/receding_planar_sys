@@ -365,8 +365,6 @@ class RecedingController:
             self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
             # publish filtered and reference:
             r = self.RM.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
-            # print "current t = ",self.callback_count*self.dt
-            # print "max t = ",self.RM.tvec[-1]
             if r:
                 xref,uref = r
             else:
@@ -379,8 +377,6 @@ class RecedingController:
             # get reference traj
             ttmp = self.twin + (self.callback_count + 1)*self.dt
             r = self.RM.calc_reference_traj(self.dsys, ttmp)
-            print "ttmp[0] = ",ttmp[0], "ttmp[-1] = ",ttmp[-1]
-            print "min t = ",self.RM.tvec[0],"max t = ",self.RM.tvec[-1]
             if r:
                 Xref, Uref = r
             else:
