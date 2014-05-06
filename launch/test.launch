@@ -1,0 +1,20 @@
+<launch> 
+  <!-- first let's add the static frame broadcaster that broadcasts frames in a default config -->
+  <include file="$(find receding_planar_sys)/launch/default_calibration_frames.launch" />
+  
+  <group ns="robot_1">
+    <!-- interactive marker nodes -->
+    <node pkg="receding_planar_sys" name="interactive_marker"
+	  type="interactive_marker_ref_gen.py" output="screen" respawn="true" />
+    <!-- <node pkg="receding_planar_sys" name="marker_paths" -->
+    <!-- 	  type="marker_path.py" output="screen" respawn="true" /> -->
+  </group>
+  <!-- start up the keyboard node -->
+  <param name="robot_index" value="1" />
+  <node pkg="keyboard_node" type="multi_keyboard_node"
+	name="keyboard_interface" output="screen" respawn="true"
+	launch-prefix="xterm -e" />
+
+  <!-- start up rviz unless visualization is set to false -->
+  <node pkg="rviz" type="rviz" respawn="false" name="rviz"/>
+</launch>
