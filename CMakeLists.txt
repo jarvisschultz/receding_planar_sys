@@ -37,3 +37,6 @@ find_package(OpenCV REQUIRED)
 rosbuild_add_executable(video_recorder src/video_recorder.cpp)
 rosbuild_link_boost(video_recorder signals)
 target_link_libraries(video_recorder ${OpenCV_LIBS})
+
+# add executable for the basic_controls.cpp
+rosbuild_add_executable(basic_controls src/basic_controls.cpp)
