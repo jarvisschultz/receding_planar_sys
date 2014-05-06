@@ -44,6 +44,8 @@ PUBLISHERS:
 
 using namespace visualization_msgs;
 boost::shared_ptr<interactive_markers::InteractiveMarkerServer> server;
+ros::Publisher *marker_pub_ref;
+ros::Publisher *con_pub_ref;
 puppeteer_msgs::OperatingCondition op;
 uint8_t operating_condition = op.IDLE;
 
@@ -88,20 +90,20 @@ InteractiveMarkerControl& makeMarkerControl( InteractiveMarker &msg, std::string
 
 void processFeedback( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
 {
-    std::ostringstream s;
     if (operating_condition == op.RUN)
     {
-	ROS_INFO("processFeedback called... type = %d", feedback->event_type);
-	if (feedback->event_type == InteractiveMarkerFeedback::POSE_UPDATE)
-	    ROS_INFO_STREAM(s.str() << "pose changed"
-			    << "\nposition = "
-			    << feedback->pose.position.x
-			    << ", " << feedback->pose.position.y
-			    << ", " << feedback->pose.position.z << std::endl);
-			
+	// std::ostringstream s;
+	// ROS_INFO("processFeedback called... type = %d", feedback->event_type);
+	// if (feedback->event_type == InteractiveMarkerFeedback::POSE_UPDATE)
+	//     ROS_INFO_STREAM(s.str() << "pose changed"
+	// 		    << "\nposition = "
+	// 		    << feedback->pose.position.x
+	// 		    << ", " << feedback->pose.position.y
+	// 		    << ", " << feedback->pose.position.z << std::endl);
 	server->applyChanges();
     }
 }
+
 
 void SingleController(void)
 {
@@ -152,6 +154,7 @@ void send_transforms(void)
     static tf::TransformBroadcaster br;
     ros::Time tnow = ros::Time::now();
     InteractiveMarker vm;
+    std::vector<visualization_msgs::Marker> mlist;
     if (server->get(MARKERNAME, vm))
     {
 	tf::Transform t;
@@ -159,7 +162,25 @@ void send_transforms(void)
 	t.setRotation(tf::Quaternion(vm.pose.orientation.x, vm.pose.orientation.y,
 				     vm.pose.orientation.z, vm.pose.orientation.w));
 	br.sendTransform(tf::StampedTransform(t, tnow, MARKERWF, MARKERFRAME));
+	geometry_msgs::PointStamped pt;
+	pt.header.stamp = tnow;
+	pt.header.frame_id = MARKERWF;
+	pt.point.x = vm.pose.position.x;
+	pt.point.y = vm.pose.position.y;
+	pt.point.z = vm.pose.position.z;
+	marker_pub_ref->publish(pt);
+	// build entry for MarkerArray
+	Marker m;
+	m.header = vm.header;
+	m.pose = vm.pose;
+	m.type = vm.controls[0].markers[0].type;
+	m.color = vm.controls[0].markers[0].color;
+	m.scale = vm.controls[0].markers[0].scale;
+	mlist.push_back(m);
     }
+    MarkerArray ma;
+    ma.markers = mlist;
+    con_pub_ref->publish(ma);
     return;
 }
 
@@ -188,7 +209,10 @@ int main(int argc, char *argv[])
     ros::Subscriber opsub = n.subscribe("/operating_condition", 1, opcb);
     // publisher for point and visualization:
     ros::Publisher marker_pub = n.advertise<geometry_msgs::PointStamped>("mass_ref_point", 1);
+    marker_pub_ref = &marker_pub;
     ros::Publisher con_pub = n.advertise<MarkerArray>("visualization_markers", 1);
+    con_pub_ref = &con_pub;
+    
     // timer for the publishing the data:
     ros::Timer pubtimer = n.createTimer(ros::Duration(DT), timercb);
 
