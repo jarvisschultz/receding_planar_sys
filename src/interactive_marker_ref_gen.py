@@ -22,7 +22,6 @@ import rospy
 import copy
 from interactive_markers.interactive_marker_server import *
 import visualization_msgs.msg as VM
-from geometry_msgs.msg import PoseStamped as PS
 import std_srvs.srv as SS
 from geometry_msgs.msg import Pose as P
 from geometry_msgs.msg import Point
@@ -30,7 +29,6 @@ from geometry_msgs.msg import PointStamped
 from geometry_msgs.msg import Quaternion
 from puppeteer_msgs.msg import OperatingCondition
 import tf
-from math import sin
 
 
 # global constants
