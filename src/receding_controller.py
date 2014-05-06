@@ -175,7 +175,9 @@ class RecedingController:
                                              self.recedingcb)
         elif self.ctype == "lqr":
             rospy.loginfo("Running an LQR controller")
+            tnow = rospy.Time.now()
             self.setup_lqr_controller()
+            rospy.loginfo("Time to solve for controller = {0:f}".format((rospy.Time.now()-tnow).to_sec()))
             self.meas_sub = rospy.Subscriber("meas_config", PlanarSystemConfig,
                                              self.lqrcb)
         elif self.ctype == "full" and self.interactive_bool:
@@ -257,12 +259,14 @@ class RecedingController:
                 }
 
 
-    def setup_lqr_controller(self):
-        steps = 500
+    def setup_lqr_controller(self, X0=None):
+        steps = 100
         err = True
         count = 0
+        if X0 is None:
+            X0 = self.X0
         while err:
-            err, Kstab = op.LQROptimizer(self.system, self.X0, self.dt,
+            err, Kstab = op.LQROptimizer(self.system, X0, self.dt,
                                          Q=self.Qcost, R=self.Rcost, steps=steps)
             count += 1
             steps *= 2
@@ -487,6 +491,10 @@ class RecedingController:
                 return
             # publish filtered and reference:
             self.publish_state_and_config(data, self.ekf.xkk, xref[0])
+            # re-solve Control gains:
+            self.setup_lqr_controller(X0=xref[0])
+            # if self.callback_count % 10  == 0:
+            #     print self.Kstab
             # calculate controls:
             self.Ukey = xref[0][2:4] + tools.matmult(self.Kstab, xref[0] - self.ekf.xkk)
             # send controls to robot:
