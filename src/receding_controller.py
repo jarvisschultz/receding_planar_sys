@@ -320,6 +320,9 @@ class RecedingController:
             # clear trajectories:
             self.mass_ref_vec.clear()
             self.mass_filt_vec.clear()
+            # reset 
+            if self.interactive_bool:
+                self.RM.reset_interps()
             return
 
         if self.first_flag:

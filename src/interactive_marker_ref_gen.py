@@ -133,7 +133,7 @@ class SingleController:
 class MarkerControls:
     def __init__(self):
         # create marker server:
-        self.server = InteractiveMarkerServer("mass_reference_control")
+        self.server = InteractiveMarkerServer("mass_reference_control", q_size=1)
         # create listener and broadcaster
         self.br = tf.TransformBroadcaster()
         self.listener = tf.TransformListener()
@@ -179,12 +179,12 @@ class MarkerControls:
 
 
     def marker_cb(self, feedback):
-        # if self.operating_condition >= OperatingCondition.RUN:
-        s = "Feedback from marker '" + feedback.marker_name
-        s += "' / control '" + feedback.control_name + "'"
-        if feedback.event_type == InteractiveMarkerFeedback.POSE_UPDATE:
-            pass
-        self.server.applyChanges()
+        if self.operating_condition == OperatingCondition.RUN:
+            rospy.loginfo("marker_cb called... type = {0:d}".format(feedback.event_type))
+            if feedback.event_type == InteractiveMarkerFeedback.POSE_UPDATE:
+                print "x = {0:f}\r\ny = {1:f}\r\n\r\n".format(feedback.pose.position.x,
+                                                              feedback.pose.position.y)
+            self.server.applyChanges()
         return
 
 
@@ -217,7 +217,7 @@ class MarkerControls:
 
     def timercb(self, event):
         # check operating condition:
-        if self.operating_condition >= OperatingCondition.RUN:
+        if self.operating_condition == OperatingCondition.RUN:
             self.send_transforms()
         return
 
