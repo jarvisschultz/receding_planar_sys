@@ -23,6 +23,8 @@ PUBLISHERS:
 #include <tf/transform_broadcaster.h>
 #include <tf/tf.h>
 #include <puppeteer_msgs/OperatingCondition.h>
+#include <puppeteer_msgs/PlanarSystemConfig.h>
+#include <puppeteer_msgs/PlanarSystemService.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/Pose.h>
@@ -46,6 +48,7 @@ using namespace visualization_msgs;
 boost::shared_ptr<interactive_markers::InteractiveMarkerServer> server;
 ros::Publisher *marker_pub_ref;
 ros::Publisher *con_pub_ref;
+geometry_msgs::Pose *start_pose_ref;
 puppeteer_msgs::OperatingCondition op;
 uint8_t operating_condition = op.IDLE;
 
@@ -135,13 +138,15 @@ void opcb(const puppeteer_msgs::OperatingCondition &data)
     if (data.state < operating_condition)
     {
 	ROS_INFO("Resetting interactive marker!");
-	geometry_msgs::Pose tmp;
-	tmp.orientation.w = 1;
-	server->setPose(MARKERNAME, tmp);
+	server->setPose(MARKERNAME, *start_pose_ref);
     }
     operating_condition = data.state;
     if (operating_condition == op.RUN)
+    {
 	SingleController();
+	server->applyChanges();
+	server->setPose(MARKERNAME, *start_pose_ref);
+    }
     else if (operating_condition == op.IDLE)
 	server->clear();
     server->applyChanges();
@@ -199,7 +204,43 @@ int main(int argc, char *argv[])
 {
     ros::init(argc, argv, "interactive_marker_ref_gen");
     ros::NodeHandle n;
-
+    geometry_msgs::Pose start_pose;
+    
+    // wait for service, and get the starting config:
+    ROS_INFO("interactive marker node Waiting for get_ref_config service:");
+    ROS_INFO("Will not continue until available...");
+    if(ros::service::waitForService("get_ref_config"))
+    {
+	// service available:
+	puppeteer_msgs::PlanarSystemService::Request req;
+	puppeteer_msgs::PlanarSystemService::Response resp;
+	puppeteer_msgs::PlanarSystemConfig q0;
+	req.index = 0; //initial config:
+	ros::service::call("get_ref_config", req, resp);
+	q0 = resp.config;
+	ROS_DEBUG("Initial config:");
+	ROS_DEBUG("xm=%f, ym=%f, xr=%f, r=%f\r\n",q0.xm,q0.ym,q0.xr,q0.r);
+	start_pose.position.x = q0.xm;
+	start_pose.position.y = q0.ym;
+	start_pose.position.z = 0.0;
+	start_pose.orientation.w = 1;
+	start_pose.orientation.x = 0;
+	start_pose.orientation.y = 0;
+	start_pose.orientation.z = 0;
+    }
+    else
+    {
+	ROS_ERROR("Could not get service, going to assume initial pose is zero");
+	start_pose.position.x = 0;
+	start_pose.position.y = 0;
+	start_pose.position.z = 0;
+	start_pose.orientation.w = 1;
+	start_pose.orientation.x = 0;
+	start_pose.orientation.y = 0;
+	start_pose.orientation.z = 0;
+    }
+    start_pose_ref = &start_pose;
+    
     // create server for interactive markers:
     server.reset( new interactive_markers::InteractiveMarkerServer("mass_reference_control","",false) );
 

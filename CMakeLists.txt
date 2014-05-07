@@ -39,5 +39,4 @@ rosbuild_link_boost(video_recorder signals)
 target_link_libraries(video_recorder ${OpenCV_LIBS})
 
 # add executables
-rosbuild_add_executable(basic_controls src/basic_controls.cpp)
 rosbuild_add_executable(interactive_marker_ref_gen src/interactive_marker_ref_gen.cpp)

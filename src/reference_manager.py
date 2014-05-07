@@ -49,7 +49,7 @@ class RefManager( object ):
             self.start_time_sub = rospy.Subscriber("start_time", Time, self.timecb)
             self.mass_ref_sub = rospy.Subscriber("mass_ref_point", PointStamped, self.pointcb)
             self.mutex = threading.Lock()
-            self.X0 = np.hstack(([0,0,0,self.r0], np.zeros(4,)))
+            self.X0 = np.hstack(([0,sd.h0-self.r0,0,self.r0], np.zeros(4,)))
             self._tvec = np.array([-0.1, 0.0])
             self._xvec = np.array([self.X0, self.X0])
             self.update_interp()
