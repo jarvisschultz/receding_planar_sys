@@ -491,10 +491,6 @@ class RecedingController:
                 return
             # publish filtered and reference:
             self.publish_state_and_config(data, self.ekf.xkk, xref[0])
-            # re-solve Control gains:
-            self.setup_lqr_controller(X0=xref[0])
-            # if self.callback_count % 10  == 0:
-            #     print self.Kstab
             # calculate controls:
             self.Ukey = xref[0][2:4] + tools.matmult(self.Kstab, xref[0] - self.ekf.xkk)
             # send controls to robot:
@@ -503,6 +499,11 @@ class RecedingController:
             self.add_to_path_vectors(data, xref[0], self.ekf.xkk)
             # store data:
             self.Uprev = self.Ukey
+            # re-solve Control gains:
+            xstab = xref[0].copy()
+            xstab[0] = 0
+            xstab[2] = 0
+            self.setup_lqr_controller(X0=xstab)
             # check for the end of the trajectory:
             if self.callback_count >= len(self.tvec):
                 rospy.loginfo("Trajectory complete!")
