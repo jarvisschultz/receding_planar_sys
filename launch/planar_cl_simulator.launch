@@ -80,6 +80,12 @@
 	name="keyboard_interface" output="screen" respawn="true"
 	launch-prefix="xterm -e" />
 
+  <!-- start up emergency stop stuff -->
+  <!-- <param name="joy_node/dev" value="/dev/input/js0" /> -->
+  <node pkg="joy" type="joy_node" name="joystick_node" output="screen" respawn="true"/>
+  <node pkg="receding_planar_sys" name="emergency_stopper_joy" type="emergency_stopper_joy.py" 
+	output="screen" respawn="true" />
+
   <!-- start up rviz unless visualization is set to false -->
   <group if="$(arg vis)">
     <node pkg="rviz" type="rviz" respawn="false" name="rviz"

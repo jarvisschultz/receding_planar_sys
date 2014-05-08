@@ -51,6 +51,7 @@
     <param name="power" value="$(arg power)" type="double"/>
     <param name="exponent" value="$(arg exponent)" type="double"/>
     <param name="r0" value="$(arg r0)" type="double"/>
+    <param name="interactive" value="$(arg interactive)" type="bool" />
     <!-- load relevant matrices -->
     <rosparam command="load" 
 	      file="$(find receding_planar_sys)/launch/noise_and_control_params.yaml" />
@@ -77,6 +78,12 @@
   <node pkg="keyboard_node" type="multi_keyboard_node"
 	name="keyboard_interface" output="screen" respawn="true"
 	launch-prefix="xterm -e" />
+
+  <!-- start up emergency stop stuff -->
+  <!-- <param name="joy_node/dev" value="/dev/input/js0" /> -->
+  <node pkg="joy" type="joy_node" name="joystick_node" output="screen" respawn="true"/>
+  <node pkg="receding_planar_sys" name="emergency_stopper_joy" type="emergency_stopper_joy.py" 
+	output="screen" respawn="true" />
 
   <!-- start up rviz unless visualization is set to false -->
   <group if="$(arg vis)">
