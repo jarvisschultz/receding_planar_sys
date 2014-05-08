@@ -8,6 +8,7 @@
   <arg name="noise" default="0.0" /> <!-- amount of noise to add -->
   <arg name="simfreq" default="10.0" /> <!-- frequency of the simulator -->
   <arg name="cont" default="receding" /> <!-- what type of controller to use -->
+  <arg name="interactive" default="false" /> <!-- if true, we use an interactive ref generator -->
   
   <!-- REFERENCE TRAJECTORY PARAMETERS -->
   <arg name="tper" default="10.0" /> <!-- time to traverse trajectory -->
@@ -57,6 +58,17 @@
   <node pkg="receding_planar_sys" name="coordinator"
 	type="receding_coordinator" output="screen" respawn="true" />
 
+  <!-- interactive marker nodes -->
+  <group if="$(arg interactive)">
+    <node pkg="receding_planar_sys" name="interactive_marker"
+	  type="interactive_marker_ref_gen" output="screen" respawn="true" />
+    <node pkg="receding_planar_sys" name="marker_paths"
+	  type="marker_path.py" output="screen" respawn="true" />
+  </group>
+  <!-- load parameters for the limits of the world -->
+  <rosparam command="load" 
+	    file="$(find receding_planar_sys)/launch/world_limits.yaml" />
+
   <!-- start serial node -->
   <node pkg="serial_node" type="multi_serial_topic" name="serial_node"
     	output="log" respawn="true" />
@@ -69,7 +81,7 @@
   <!-- start up rviz unless visualization is set to false -->
   <group if="$(arg vis)">
     <node pkg="rviz" type="rviz" respawn="false" name="rviz"
-	  args="-d $(find robot_simulator)/launch/controller.vcg" />
+	  args="-d $(find receding_planar_sys)/launch/interactive_experiment.vcg" />
   </group>
   
 
