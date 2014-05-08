@@ -4,6 +4,8 @@ import trep.discopt as discopt
 import numpy as np
 from collections import deque
 import rospy
+from tools import matmult as MM
+
 
 def calc_initial_guess(dsys, X0, Xref, Uref):
     """
@@ -49,6 +51,31 @@ def LQROptimizer(system, X0, DT, Q=None, R=None, tol=1e-6, steps=1000):
         rospy.logwarn("LQR stabilizing controller not settled!")
         err = True
     return err, Kstab[0]
+
+
+def DiscreteFiniteHorizonLQR(system, X0, DT, Q=None, R=None, tol=1e-6, steps=1000, Pk=None):
+    mvi = trep.MidpointVI(system)
+    dsys = discopt.DSystem(mvi, [0, DT])
+    # create an A and B:
+    Xt = np.vstack((X0,X0))
+    Ut = np.array([X0[2:4]])
+    A,B = dsys.linearize_trajectory(Xt, Ut)
+    A = A[0]
+    B = B[0]
+    # now we can start solving Riccati equation:
+    if Pk is None:
+        Pk = Q
+    Pkp1 = 1000*Pk
+    err = True
+    for i in range(steps):
+        Pkp1 = Q + MM(A.T, Pk, A) - MM(A.T, Pk, B, np.linalg.inv((R+MM(B.T,Pk,B))),B.T,Pk,A)
+        if np.linalg.norm(Pkp1 - Pk, ord=2) < tol:
+            err = False
+            break
+        Pk = Pkp1
+    # calc K
+    K = MM(np.linalg.inv(R+MM(B.T,Pk,B)), B.T, Pk, A)
+    return err, K, Pk
 
     
 class RecedingOptimizer( object ):

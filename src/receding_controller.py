@@ -265,11 +265,12 @@ class RecedingController:
         count = 0
         if X0 is None:
             X0 = self.X0
+        P = self.Qcost
         while err:
-            err, Kstab = op.LQROptimizer(self.system, X0, self.dt,
-                                         Q=self.Qcost, R=self.Rcost, steps=steps)
+            err, Kstab, P = op.DiscreteFiniteHorizonLQR(self.system, X0, self.dt,
+                                                        Q=self.Qcost, R=self.Rcost,
+                                                        steps=steps, Pk=P, tol=1e-6)
             count += 1
-            steps *= 2
             if count > 5:
                 rospy.logerr("Could not find LQR regulator!")
                 rospy.signal_shutdown()
@@ -452,7 +453,7 @@ class RecedingController:
                     self.time_pub.publish(data.header.stamp)
                     self.send_initial_config()
                     self.tbase = data.header.stamp
-                elif self.callback_count > 1:
+                elif self.callback_count > self.n_win:
                     self.wait_flag = False
                 self.callback_count += 1
                 return
