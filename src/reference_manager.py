@@ -17,7 +17,7 @@ import threading
 # local imports:
 import system_definition as sd
 
-MAX_POINTS = 300
+MAX_POINTS = 5000
 
 class RefManager( object ):
     """

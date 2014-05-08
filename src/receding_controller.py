@@ -485,6 +485,9 @@ class RecedingController:
             self.ekf.step_filter(zk, Winc=np.zeros(self.dsys.nX), u=self.Uprev)
             # get reference
             r = self.RM.calc_reference_traj(self.dsys, [self.callback_count*self.dt])
+            # if self.callback_count%20 == 0:
+            #     print "time requested = ",self.callback_count*self.dt
+            #     print "time available = [{0:f}\t{1:f}]".format(self.RM._tvec[0], self.RM._tvec[-1]),"\r\n"
             if r:
                 xref,uref = r
             else:
@@ -496,15 +499,15 @@ class RecedingController:
             self.Ukey = xref[0][2:4] + tools.matmult(self.Kstab, xref[0] - self.ekf.xkk)
             # send controls to robot:
             self.convert_and_send_input(self.ekf.xkk[2:4], self.Ukey)
+            # # re-solve Control gains:
+            # xstab = xref[0].copy()
+            # xstab[0] = 0
+            # xstab[2] = 0
+            # self.setup_lqr_controller(X0=xstab)
             # add path information:
             self.add_to_path_vectors(data, xref[0], self.ekf.xkk)
             # store data:
             self.Uprev = self.Ukey
-            # re-solve Control gains:
-            xstab = xref[0].copy()
-            xstab[0] = 0
-            xstab[2] = 0
-            self.setup_lqr_controller(X0=xstab)
             # check for the end of the trajectory:
             if self.callback_count >= len(self.tvec):
                 rospy.loginfo("Trajectory complete!")
