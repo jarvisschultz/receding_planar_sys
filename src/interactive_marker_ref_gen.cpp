@@ -15,6 +15,7 @@ PUBLISHERS:
     - mass_ref_point (PointStamped)
     - mass_ref_frame (tf) ... not really a topic
     - visualization_markers (VisualizationMarkerArray)
+    - limit_markers (Marker)
 */
 
 
@@ -50,11 +51,44 @@ using namespace visualization_msgs;
 boost::shared_ptr<interactive_markers::InteractiveMarkerServer> server;
 ros::Publisher *marker_pub_ref;
 ros::Publisher *con_pub_ref;
+ros::Publisher *limits_pub_ref;
 geometry_msgs::Pose start_pose;
 puppeteer_msgs::OperatingCondition op;
 uint8_t operating_condition = op.IDLE;
 double xmax,xmin,ymax,ymin;
 bool limits_bool=false;
+Marker limit_marker;
+
+
+// function for creating marker of limits:
+Marker makeLimitMarker(void)
+{
+    Marker marker;
+    marker.type = Marker::LINE_STRIP;
+    marker.scale.x = 0.05;
+    marker.color.a = 1.0f;
+    marker.points.resize(5);
+    marker.lifetime = ros::Duration();
+    marker.header.frame_id = MARKERWF;
+
+    // Lower left
+    marker.points[0].x = xmin;
+    marker.points[0].y = ymin;
+    // Upper left
+    marker.points[1].x = xmin;
+    marker.points[1].y = ymax;
+    // Upper right
+    marker.points[2].x = xmax;
+    marker.points[2].y = ymax;
+    // Lower right
+    marker.points[3].x = xmax;
+    marker.points[3].y = ymin;
+    // repeat lower left
+    marker.points[4].x = xmin;
+    marker.points[4].y = ymin;
+
+    return marker;
+}
 
 // function for creating marker:
 Marker makeMarker( InteractiveMarker &msg, std::string color)
@@ -89,7 +123,7 @@ InteractiveMarkerControl& makeMarkerControl( InteractiveMarker &msg, std::string
     control.always_visible = true;
     control.markers.push_back( makeMarker(msg, color) );
     msg.controls.push_back( control );
-    
+
     return msg.controls.back();
 }
 
@@ -165,6 +199,7 @@ void opcb(const puppeteer_msgs::OperatingCondition &data)
     if (operating_condition == op.RUN)
     {
 	SingleController();
+	limits_pub_ref->publish(limit_marker);
 	// server->applyChanges();
 	// server->setPose(MARKERNAME, start_pose);
     }
@@ -280,6 +315,9 @@ void setup_limits(void)
 	ymin = static_cast<double>(param_list[0]);
 	ymax = static_cast<double>(param_list[1]);
 	ROS_INFO("ylim = [%f, %f]",ymin, ymax);
+
+	// build marker if we need to:
+	limit_marker = makeLimitMarker();
     }
     else
 	ROS_WARN("Not enforcing interactive limits!");
@@ -300,12 +338,12 @@ int main(int argc, char *argv[])
 
     // setup limits:
     setup_limits();
-    
+
     // create server for interactive markers:
     server.reset( new interactive_markers::InteractiveMarkerServer("mass_reference_control","",false) );
 
     ros::Duration(0.1).sleep();
-    
+
     // create subscriber for operating condition
     ros::Subscriber opsub = n.subscribe("/operating_condition", 1, opcb);
     // publisher for point and visualization:
@@ -313,13 +351,18 @@ int main(int argc, char *argv[])
     marker_pub_ref = &marker_pub;
     ros::Publisher con_pub = n.advertise<MarkerArray>("visualization_markers", 1);
     con_pub_ref = &con_pub;
-    
+    ros::Publisher limits_pub = n.advertise<Marker>("limit_markers", 1);
+    limits_pub_ref = &limits_pub;
+
+    if (limits_bool)
+	limits_pub_ref->publish(limit_marker);
+
     // timer for the publishing the data:
     ros::Timer pubtimer = n.createTimer(ros::Duration(DT), timercb);
 
     ros::spin();
     server.reset();
-    
+
     return 0;
 }
 
