@@ -831,6 +831,18 @@ class RecedingController:
         rospy.loginfo("REFERENCE PARAMETERS:")
         for key,val in refargs.iteritems():
             rospy.loginfo("\t{0:s} \t: {1:f}".format(key,val))
+
+        # are we respecting limits?
+        if rospy.has_param("xlim") and rospy.has_param("ylim"):
+            self.limit_bool = True
+            self.xlim = rospy.get_param("xlim")
+            self.xlim = np.sort(np.array(self.xlim))
+            tmp = rospy.get_param("ylim")
+            self.ylim = np.sort((sd.h0 - np.array(tmp)))
+        else:
+            self.limit_bool = False
+            self.xlim = None
+            self.ylim = None
         return refargs
 
 
@@ -916,7 +928,13 @@ class RecedingController:
         self.comm_pub.publish(com)
         return
 
-
+    def clamp_controls(self, u):
+        if self.xlim is not None:
+            u[0] = np.clip(u[0], *self.xlim)
+        if self.ylim is not None:
+            u[1] = np.clip(u[1], *self.ylim)
+        return u
+            
     def convert_and_send_input(self, u1, u2):
         """
         This function takes in two sets of kinematic inputs, processes them, and
@@ -924,6 +942,9 @@ class RecedingController:
         u1 ~ where we think the kin configs are now
         u2 ~ where we want the kin configs to be in +dt seconds
         """
+        # clamp controls if we need to:
+        if self.limit_bool:
+            u2 = self.clamp_controls(u2)
         ucom = (u2-u1)/self.dt
         com = RobotCommands()
         com.robot_index = self.robot_index
