@@ -68,6 +68,10 @@
       <node pkg="receding_planar_sys" name="marker_paths"
 	    type="marker_path.py" output="screen" respawn="true" />
     </group>
+
+    <!-- load parameters for the limits of the world -->
+    <rosparam command="load" 
+	      file="$(find receding_planar_sys)/launch/world_limits.yaml" />
   </group>
 
   <!-- start up the keyboard node -->

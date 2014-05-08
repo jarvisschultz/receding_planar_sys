@@ -32,6 +32,8 @@ PUBLISHERS:
 #include <visualization_msgs/MarkerArray.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/InteractiveMarker.h>
+#include <XmlRpcValue.h>
+
 #include <vector>
 #include <string>
 #include <iostream>
@@ -48,10 +50,11 @@ using namespace visualization_msgs;
 boost::shared_ptr<interactive_markers::InteractiveMarkerServer> server;
 ros::Publisher *marker_pub_ref;
 ros::Publisher *con_pub_ref;
-geometry_msgs::Pose *start_pose_ref;
+geometry_msgs::Pose start_pose;
 puppeteer_msgs::OperatingCondition op;
 uint8_t operating_condition = op.IDLE;
-
+double xmax,xmin,ymax,ymin;
+bool limits_bool=false;
 
 // function for creating marker:
 Marker makeMarker( InteractiveMarker &msg, std::string color)
@@ -103,6 +106,20 @@ void processFeedback( const visualization_msgs::InteractiveMarkerFeedbackConstPt
 	// 		    << feedback->pose.position.x
 	// 		    << ", " << feedback->pose.position.y
 	// 		    << ", " << feedback->pose.position.z << std::endl);
+	if (limits_bool)
+	{
+	    geometry_msgs::Pose pose = feedback->pose;
+	    // check min/max vals and project:
+	    if (pose.position.x > xmax)
+	    	pose.position.x = xmax;
+	    if (pose.position.x < xmin)
+	    	pose.position.x = xmin;
+	    if (pose.position.y > ymax)
+	    	pose.position.y = ymax;
+	    if (pose.position.y < ymin)
+	    	pose.position.y = ymin;
+	    server->setPose(feedback->marker_name, pose);
+	}
 	server->applyChanges();
     }
 }
@@ -112,7 +129,9 @@ void SingleController(void)
 {
     InteractiveMarker int_marker;
     int_marker.header.frame_id = MARKERWF;
-    int_marker.pose.orientation.w = 1;
+    int_marker.pose.orientation.w = 1.0;
+    int_marker.pose.position.x = start_pose.position.x;
+    int_marker.pose.position.y = start_pose.position.y;
     int_marker.scale = 0.25;
     int_marker.name = MARKERNAME;
     int_marker.description = "set mass reference";
@@ -135,17 +154,19 @@ void SingleController(void)
 
 void opcb(const puppeteer_msgs::OperatingCondition &data)
 {
-    if (data.state < operating_condition)
-    {
-	ROS_INFO("Resetting interactive marker!");
-	server->setPose(MARKERNAME, *start_pose_ref);
-    }
+    // if (data.state < operating_condition)
+    // {
+    // 	ROS_INFO("Resetting interactive marker!");
+    // 	server->setPose(MARKERNAME, start_pose);
+    // }
+    if (operating_condition == data.state)
+	return;
     operating_condition = data.state;
     if (operating_condition == op.RUN)
     {
 	SingleController();
-	server->applyChanges();
-	server->setPose(MARKERNAME, *start_pose_ref);
+	// server->applyChanges();
+	// server->setPose(MARKERNAME, start_pose);
     }
     else if (operating_condition == op.IDLE)
 	server->clear();
@@ -198,14 +219,8 @@ void timercb(const ros::TimerEvent &e)
 }
 
 
-
-
-int main(int argc, char *argv[])
+void get_initial_config(geometry_msgs::Pose &start_pose)
 {
-    ros::init(argc, argv, "interactive_marker_ref_gen");
-    ros::NodeHandle n;
-    geometry_msgs::Pose start_pose;
-    
     // wait for service, and get the starting config:
     ROS_INFO("interactive marker node Waiting for get_ref_config service:");
     ROS_INFO("Will not continue until available...");
@@ -239,7 +254,52 @@ int main(int argc, char *argv[])
 	start_pose.orientation.y = 0;
 	start_pose.orientation.z = 0;
     }
-    start_pose_ref = &start_pose;
+    return;
+}
+
+
+void setup_limits(void)
+{
+    if (ros::param::has("xlim") && ros::param::has("ylim"))
+    {
+	// then we will enforce limits:
+	limits_bool = true;
+	// get the values:
+	XmlRpc::XmlRpcValue param_list;
+	ros::param::get("xlim", param_list);
+	ROS_ASSERT(param_list.getType() == XmlRpc::XmlRpcValue::TypeArray);
+	ROS_ASSERT(param_list.size() == 2);
+	xmin = static_cast<double>(param_list[0]);
+	xmax = static_cast<double>(param_list[1]);
+	ROS_INFO("Limits read in for interactive marker node:");
+	ROS_INFO("xlim = [%f, %f]",xmin, xmax);
+
+	ros::param::get("ylim", param_list);
+	ROS_ASSERT(param_list.getType() == XmlRpc::XmlRpcValue::TypeArray);
+	ROS_ASSERT(param_list.size() == 2);
+	ymin = static_cast<double>(param_list[0]);
+	ymax = static_cast<double>(param_list[1]);
+	ROS_INFO("ylim = [%f, %f]",ymin, ymax);
+    }
+    else
+	ROS_WARN("Not enforcing interactive limits!");
+}
+
+
+
+
+int main(int argc, char *argv[])
+{
+    ros::init(argc, argv, "interactive_marker_ref_gen");
+    ros::NodeHandle n;
+
+    // fill in initial config:
+    get_initial_config(start_pose);
+    ROS_INFO("Marker start pose:");
+    ROS_INFO("x = %f y = %f",start_pose.position.x, start_pose.position.y);
+
+    // setup limits:
+    setup_limits();
     
     // create server for interactive markers:
     server.reset( new interactive_markers::InteractiveMarkerServer("mass_reference_control","",false) );
