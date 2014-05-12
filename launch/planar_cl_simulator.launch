@@ -9,6 +9,7 @@
   <arg name="simfreq" default="10.0" /> <!-- frequency of the simulator -->
   <arg name="cont" default="receding" /> <!-- what type of controller to use -->
   <arg name="interactive" default="false" /> <!-- if true, we use an interactive ref generator -->
+  <arg name="joy" default="true" /> <!-- if true, use joystick emergency stopper -->
 
   <!-- REFERENCE TRAJECTORY PARAMETERS -->
   <arg name="tper" default="10.0" /> <!-- time to traverse trajectory -->
@@ -81,10 +82,12 @@
 	launch-prefix="xterm -e" />
 
   <!-- start up emergency stop stuff -->
-  <!-- <param name="joy_node/dev" value="/dev/input/js0" /> -->
-  <node pkg="joy" type="joy_node" name="joystick_node" output="screen" respawn="true"/>
-  <node pkg="receding_planar_sys" name="emergency_stopper_joy" type="emergency_stopper_joy.py" 
-	output="screen" respawn="true" />
+  <group if="$(arg joy)">
+    <!-- <param name="joy_node/dev" value="/dev/input/js0" /> -->
+    <node pkg="joy" type="joy_node" name="joystick_node" output="screen" respawn="true"/>
+    <node pkg="receding_planar_sys" name="emergency_stopper_joy" type="emergency_stopper_joy.py" 
+	  output="screen" respawn="true" />
+  </group>
 
   <!-- start up rviz unless visualization is set to false -->
   <group if="$(arg vis)">
