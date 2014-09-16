@@ -317,14 +317,14 @@ public:
             // transform robot:
 	    transform.setOrigin(tf::Vector3(robot_cal_pos(0),
 					    robot_cal_pos(1), robot_cal_pos(2)));
-	    tf::TransformTFToEigen(transform, gwo);
+	    tf::transformTFToEigen(transform, gwo);
 	    gwo = gwo.inverse();
 	    robot_trans << r_pt.x, r_pt.y, r_pt.z;
 	    robot_trans = gwo*robot_trans;
 	    // transform mass:
 	    transform.setOrigin(tf::Vector3(mass_cal_pos(0),
 					    mass_cal_pos(1), mass_cal_pos(2)));
-	    tf::TransformTFToEigen(transform, gwo);
+	    tf::transformTFToEigen(transform, gwo);
 	    gwo = gwo.inverse();
 	    mass_trans << m_pt.x, m_pt.y, m_pt.z;
 	    mass_trans = gwo*mass_trans;

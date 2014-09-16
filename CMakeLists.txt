@@ -1,42 +1,51 @@
-cmake_minimum_required(VERSION 2.4.6)
-include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+cmake_minimum_required(VERSION 2.8.3)
+project(receding_planar_sys)
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-set(ROS_BUILD_TYPE Release)
+## Find catkin macros and libraries
+## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
+## is used, also find other catkin packages
+find_package(catkin REQUIRED COMPONENTS 
+  rospy roscpp std_msgs tf tf_conversions
+  angles nav_msgs visualization_msgs puppeteer_msgs cmake_modules cv_bridge
+  image_transport camera_calibration_parsers std_srvs interactive_markers
+)
 
-rosbuild_init()
-
-#set the default path for built executables to the "bin" directory
-set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
-#set the default path for built libraries to the "lib" directory
-set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
-
-## add eigen functionality
+## System dependencies are found with CMake's conventions
 find_package(Eigen REQUIRED)
 include_directories(${EIGEN_INCLUDE_DIRS})
 add_definitions(${EIGEN_DEFINITIONS})
 
+find_package(OpenCV REQUIRED )
+find_package(Boost REQUIRED COMPONENTS system signals)
 
-## define a function for automatically linking log4cxx:
+catkin_package(
+  INCLUDE_DIRS include
+#  LIBRARIES test
+  CATKIN_DEPENDS rospy roscpp std_msgs tf tf_conversions angles nav_msgs visualization_msgs puppeteer_msgs cv_bridge image_transport camera_calibration_parsers std_srvs interactive_markers
+#  DEPENDS system_lib
+)
+
+###########
+## Build ##
+###########
+include_directories(
+ include ${Boost_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS}
+)
+
+## Declare a cpp executable
+add_executable(receding_coordinator src/receding_coordinator.cpp)
+add_executable(video_recorder src/video_recorder.cpp)
+add_executable(interactive_marker_ref_gen src/interactive_marker_ref_gen.cpp)
+
 find_library(LOG4CXX_LIBRARY log4cxx)
-function(add_logging_executable name sources)
-    rosbuild_add_executable(${name} ${sources})
-    target_link_libraries(${name} ${LOG4CXX_LIBRARY})
-endfunction(add_logging_executable)
+## Specify libraries to link a library or executable target against
+ target_link_libraries(
+  receding_coordinator ${catkin_LIBRARIES} ${Boost_LIBRARIES}
+ )
+ target_link_libraries(
+  video_recorder ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${Boost_LIBRARIES}
+ )
+ target_link_libraries(
+  interactive_marker_ref_gen ${catkin_LIBRARIES}
+ )
 
-rosbuild_add_executable(receding_coordinator src/receding_coordinator.cpp)
-rosbuild_link_boost(receding_coordinator signals)
-
-## add video_recorder executable
-find_package(OpenCV REQUIRED)
-rosbuild_add_executable(video_recorder src/video_recorder.cpp)
-rosbuild_link_boost(video_recorder signals)
-target_link_libraries(video_recorder ${OpenCV_LIBS})
-
-# add executables
-rosbuild_add_executable(interactive_marker_ref_gen src/interactive_marker_ref_gen.cpp)
