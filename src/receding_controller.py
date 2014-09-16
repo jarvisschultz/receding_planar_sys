@@ -43,7 +43,6 @@ PARAMS:
 """
 
 # ROS imports:
-import roslib; roslib.load_manifest('receding_planar_sys')
 import rospy
 import tf
 from std_msgs.msg import Time
@@ -200,16 +199,16 @@ class RecedingController:
                                              self.recedingcb)
 
         # define publishers:
-        self.time_pub = rospy.Publisher("start_time", Time, latch=True)
-        self.filt_pub = rospy.Publisher("filt_config", PlanarSystemConfig)
-        self.filt_state_pub = rospy.Publisher("filt_state", PlanarSystemState)
-        self.ref_pub = rospy.Publisher("ref_config", PlanarSystemConfig)
-        self.ref_state_pub = rospy.Publisher("ref_state", PlanarSystemState)
-        self.comm_pub = rospy.Publisher("serial_commands", RobotCommands)
-        self.ref_path_pub = rospy.Publisher("mass_ref_path", Path)
-        self.filt_path_pub = rospy.Publisher("mass_filt_path", Path)
-        self.cov_pub = rospy.Publisher("post_covariance", PlanarCovariance)
-        self.opt_pub = rospy.Publisher("optimization_data", OptimizationData)
+        self.time_pub = rospy.Publisher("start_time", Time, latch=True, queue_size=3)
+        self.filt_pub = rospy.Publisher("filt_config", PlanarSystemConfig, queue_size=3)
+        self.filt_state_pub = rospy.Publisher("filt_state", PlanarSystemState, queue_size=3)
+        self.ref_pub = rospy.Publisher("ref_config", PlanarSystemConfig, queue_size=3)
+        self.ref_state_pub = rospy.Publisher("ref_state", PlanarSystemState, queue_size=3)
+        self.comm_pub = rospy.Publisher("serial_commands", RobotCommands, queue_size=3)
+        self.ref_path_pub = rospy.Publisher("mass_ref_path", Path, queue_size=3)
+        self.filt_path_pub = rospy.Publisher("mass_filt_path", Path, queue_size=3)
+        self.cov_pub = rospy.Publisher("post_covariance", PlanarCovariance, queue_size=3)
+        self.opt_pub = rospy.Publisher("optimization_data", OptimizationData, queue_size=3)
         # define timer callbacks:
         self.path_timer = rospy.Timer(rospy.Duration(0.1), self.path_timercb)
 

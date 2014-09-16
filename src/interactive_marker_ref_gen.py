@@ -17,7 +17,6 @@ PUBLISHERS:
     - mass_ref_frame (tf) ... not really a topic
     - visualization_markers (VisualizationMarkerArray)
 """
-import roslib; roslib.load_manifest("receding_planar_sys")
 import rospy
 import copy
 from interactive_markers.interactive_marker_server import *
@@ -147,9 +146,9 @@ class MarkerControls:
                                             OperatingCondition, self.opcb)
         self.operating_condition = OperatingCondition.IDLE
         # create publisher
-        self.marker_pub = rospy.Publisher("mass_ref_point", PointStamped)
+        self.marker_pub = rospy.Publisher("mass_ref_point", PointStamped, queue_size=3)
         # publish markers for drawing paths
-        self.con_pub = rospy.Publisher("visualization_markers", VM.MarkerArray)
+        self.con_pub = rospy.Publisher("visualization_markers", VM.MarkerArray, queue_size=3)
         # setup timer to publish transforms and messages:
         rospy.Timer(rospy.Duration(DT), self.timercb)
         return

@@ -92,7 +92,7 @@
   <!-- start up rviz unless visualization is set to false -->
   <group if="$(arg vis)">
     <node pkg="rviz" type="rviz" respawn="false" name="rviz"
-	  args="-d $(find receding_planar_sys)/launch/interactive_robot.vcg" />
+	  args="-d $(find receding_planar_sys)/launch/interactive_robot.rviz" />
   </group>
   
 

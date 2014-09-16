@@ -14,7 +14,6 @@ SERVICES:
 """
 
 
-import roslib; roslib.load_manifest('receding_planar_sys')
 import rospy
 from puppeteer_msgs.msg import OperatingCondition
 from puppeteer_msgs.srv import OperatingConditionChange

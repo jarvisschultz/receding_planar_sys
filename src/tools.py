@@ -1,7 +1,6 @@
 from numpy import (
     dot, array, pi, exp, sqrt, apply_along_axis, zeros
     )
-import roslib; roslib.load_manifest('receding_planar_sys')
 import rospy
 import system_definition as sd
 from puppeteer_msgs.msg import PlanarSystemConfig

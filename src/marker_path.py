@@ -2,7 +2,6 @@
 ################
 # ROS IMPORTS: #
 ################
-import roslib; roslib.load_manifest('receding_planar_sys')
 import rospy
 import tf
 import geometry_msgs.msg as GM
@@ -48,7 +47,7 @@ class MarkerPaths:
                                             OperatingCondition, self.opcb)
         self.operating_condition = OperatingCondition.IDLE
         # publisher for the paths of the markers
-        self.path_pub = rospy.Publisher("marker_paths", VM.MarkerArray)
+        self.path_pub = rospy.Publisher("marker_paths", VM.MarkerArray, queue_size=3)
         self.paths = {}
         self.count = 0
 

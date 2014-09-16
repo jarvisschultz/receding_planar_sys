@@ -5,12 +5,11 @@ Later on I can update this file to do things like subscribe to some topic, store
 trajectory data, interpolate data, offset times from ROS time to optimization
 time, etc.
 """
-import roslib; roslib.load_manifest('receding_planar_sys')
+import rospy
 from std_msgs.msg import Time
 from geometry_msgs.msg import Point
 from geometry_msgs.msg import PointStamped
 from scipy.interpolate import interp1d
-import rospy
 import numpy as np
 from math import pi
 import threading
