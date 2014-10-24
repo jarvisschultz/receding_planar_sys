@@ -17,17 +17,10 @@ add_definitions(${EIGEN_DEFINITIONS})
 
 find_package(OpenCV REQUIRED )
 find_package(Boost REQUIRED COMPONENTS system signals)
+find_library(LOG4CXX_LIBRARY log4cxx)
 
-catkin_package(
-  INCLUDE_DIRS include
-#  LIBRARIES test
-  CATKIN_DEPENDS rospy roscpp std_msgs tf tf_conversions angles nav_msgs visualization_msgs puppeteer_msgs cv_bridge image_transport camera_calibration_parsers std_srvs interactive_markers
-#  DEPENDS system_lib
-)
+catkin_package()
 
-###########
-## Build ##
-###########
 include_directories(
  include ${Boost_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS}
 )
@@ -37,15 +30,12 @@ add_executable(receding_coordinator src/receding_coordinator.cpp)
 add_executable(video_recorder src/video_recorder.cpp)
 add_executable(interactive_marker_ref_gen src/interactive_marker_ref_gen.cpp)
 
-find_library(LOG4CXX_LIBRARY log4cxx)
-## Specify libraries to link a library or executable target against
- target_link_libraries(
-  receding_coordinator ${catkin_LIBRARIES} ${Boost_LIBRARIES}
- )
- target_link_libraries(
-  video_recorder ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${Boost_LIBRARIES}
- )
- target_link_libraries(
-  interactive_marker_ref_gen ${catkin_LIBRARIES}
- )
 
+add_dependencies(receding_coordinator ${catkin_EXPORTED_TARGETS})
+add_dependencies(video_recorder ${catkin_EXPORTED_TARGETS})
+add_dependencies(interactive_marker_ref_gen ${catkin_EXPORTED_TARGETS})
+
+
+target_link_libraries(receding_coordinator ${catkin_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(video_recorder ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(interactive_marker_ref_gen ${catkin_LIBRARIES}) 
